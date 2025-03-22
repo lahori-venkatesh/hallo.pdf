@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Preload OpenCV for faster loading -->
+    <link rel="preload" href="https://docs.opencv.org/4.8.0/opencv.js" as="script">
+    
+    <!-- Initialize OpenCV -->
+    <script>
+      window.Module = {
+        onRuntimeInitialized: function() {
+          window.isOpenCvReady = true;
+          window.dispatchEvent(new Event('opencv-ready'));
+        }
+      };
+    </script>
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+    
+    <title>Bropdf - Document & Image Conversion Tools</title>
+    <meta name="description" content="Transform your documents and images with Bropdf's powerful conversion tools. Convert, compress, and enhance your files with ease." />
+    <meta name="keywords" content="document conversion, image tools, PDF converter, OCR, image compression" />
+    
+    <!-- Security Headers -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-eval' 'unsafe-inline' https://docs.opencv.org;
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' blob: data: https://*.unsplash.com https://docs.opencv.org;
+      connect-src 'self' https://kzfivmcaxgwleqqkvrzr.supabase.co;
+      worker-src 'self' blob:;
+      frame-src 'self';
+      font-src 'self';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      frame-ancestors 'none';
+      upgrade-insecure-requests;
+    ">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Permissions-Policy" content="camera=self">
+    
+    <!-- Performance Optimization -->
+    <link rel="preconnect" href="https://docs.opencv.org">
+    <link rel="preconnect" href="https://kzfivmcaxgwleqqkvrzr.supabase.co">
+    <link rel="preconnect" href="https://images.unsplash.com">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
