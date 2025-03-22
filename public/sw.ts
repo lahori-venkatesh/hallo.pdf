@@ -1,5 +1,3 @@
-/// <reference lib="webworker" />
-
 const CACHE_NAME = 'hallopdf-v1';
 const ASSETS = [
   '/',

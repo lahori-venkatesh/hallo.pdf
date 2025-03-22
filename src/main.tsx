@@ -4,6 +4,21 @@ import { HelmetProvider } from 'react-helmet-async';
 import App from './App.tsx';
 import './index.css';
 
+// Register Service Worker
+// Register Service Worker after app mounts
+const registerServiceWorker = () => {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker
+      .register('/sw.js')  // Correct service worker path
+      .then((registration) => {
+        console.log('SW registered:', registration);
+      })
+      .catch((error) => {
+        console.error('SW registration failed:', error);
+      });
+  }
+};
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <HelmetProvider>
@@ -12,27 +27,5 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>
 );
 
-// Service Worker Registration
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .then(registration => {
-        console.log('ServiceWorker registration successful:', registration);
-      })
-      .catch(err => {
-        console.error('ServiceWorker registration failed:', err);
-      });
-  });
-}
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .then(registration => {
-        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-      })
-      .catch(err => {
-        console.log('ServiceWorker registration failed: ', err);
-      });
-  });
-}
+// Register service worker after app mounts
+registerServiceWorker();

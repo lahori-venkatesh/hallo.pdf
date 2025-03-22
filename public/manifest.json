@@ -11,6 +11,12 @@
   "categories": ["productivity", "utilities"],
   "icons": [
     {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/icons/icon-96x96.png",
       "sizes": "96x96",
       "type": "image/png",
@@ -23,32 +29,50 @@
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-256x256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+      
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png"
+      
+    },
+    {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
+      
     }
   ],
   "screenshots": [
     {
-      "src": "/screenshots/home.png",
-      "sizes": "1080x1920",
+      "src": "/screenshots/desktop-screenshot.png",
+      "sizes": "1920x1080",
       "type": "image/png",
-      "platform": "narrow",
-      "label": "Home Screen"
+      "form_factor": "wide",
+      "label": "Desktop View"
     },
     {
-      "src": "/screenshots/pdf-tools.png",
+      "src": "/screenshots/mobile-1080x1920.png",
       "sizes": "1080x1920",
       "type": "image/png",
-      "platform": "narrow",
-      "label": "PDF Tools"
+      "form_factor": "narrow",
+      "label": "Mobile View"
     }
   ],
   "shortcuts": [
@@ -56,13 +80,13 @@
       "name": "PDF Tools",
       "url": "/pdf-tools",
       "description": "Convert and manage PDF files",
-      "icons": [{ "src": "/icons/pdf-192x192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Image Tools",
       "url": "/image-tools",
       "description": "Convert and compress images",
-      "icons": [{ "src": "/icons/image-192x192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "related_applications": [],
