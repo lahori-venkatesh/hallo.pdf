@@ -11,24 +11,19 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
-  TouchSensor,
   useSensor,
   useSensors,
-  DragEndEvent,
-  DragStartEvent,
-  DragOverlay,
-  defaultDropAnimationSideEffects,
+  DragEndEvent
 } from '@dnd-kit/core';
-import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  rectSortingStrategy,
+  rectSortingStrategy
 } from '@dnd-kit/sortable';
 import { useOperationsCache } from '../utils/operationsCache';
-import { CachedOperation } from '../types/cache';
+import type { CachedOperation } from '../types/cache';
 import { SEOHeaders } from './SEOHeaders';
 import { AdComponent } from './AdComponent';
 import { 
@@ -60,26 +55,16 @@ interface SortableImageProps {
   id: string;
   preview: string;
   onRemove: (id: string) => void;
-  isDragging?: boolean;
 }
 
-const dropAnimation = {
-  sideEffects: defaultDropAnimationSideEffects({
-    styles: {
-      active: {
-        opacity: '0.5'
-      }
-    }
-  })
-};
-
-function SortableImage({ id, preview, onRemove, isDragging }: SortableImageProps) {
+function SortableImage({ id, preview, onRemove }: SortableImageProps) {
   const {
     attributes,
     listeners,
     setNodeRef,
     transform,
-    transition
+    transition,
+    isDragging
   } = useSortable({ id });
 
   const style = {
@@ -87,10 +72,10 @@ function SortableImage({ id, preview, onRemove, isDragging }: SortableImageProps
     transition,
     zIndex: isDragging ? 1 : 0,
     opacity: isDragging ? 0.5 : 1,
-    touchAction: 'none'
   };
 
-  const handleRemove = (e: React.MouseEvent) => {
+  const handleRemoveClick = (e: React.MouseEvent | React.TouchEvent) => {
+
     e.preventDefault();
     e.stopPropagation();
     onRemove(id);
@@ -100,37 +85,26 @@ function SortableImage({ id, preview, onRemove, isDragging }: SortableImageProps
     <div
       ref={setNodeRef}
       style={style}
-      className="relative aspect-[3/4] bg-white rounded-lg shadow-md touch-none"
+      className="relative aspect-[3/4] bg-white rounded-lg shadow-md cursor-move"
       {...attributes}
       {...listeners}
     >
       <img
         src={preview}
         alt="Preview"
-        className="absolute inset-0 w-full h-full object-cover rounded-lg pointer-events-none"
-        draggable={false}
+        className="absolute inset-0 w-full h-full object-cover rounded-lg"
       />
       <button
-        onClick={handleRemove}
-        className="absolute top-2 right-2 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors z-10"
+        onClick={handleRemoveClick}
+        onTouchEnd={handleRemoveClick}
+        className="absolute top-2 right-2 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors z-10 touch-manipulation"
         type="button"
         aria-label="Remove image"
+        style={{ pointerEvents: 'auto' }}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <X className="w-4 h-4 text-gray-700" />
       </button>
-    </div>
-  );
-}
-
-function DraggableImage({ preview }: { preview: string }) {
-  return (
-    <div className="relative aspect-[3/4] bg-white rounded-lg shadow-md">
-      <img
-        src={preview}
-        alt="Preview"
-        className="absolute inset-0 w-full h-full object-cover rounded-lg"
-        draggable={false}
-      />
     </div>
   );
 }
@@ -142,12 +116,6 @@ const tabs = [
   { id: 'compress', label: 'Compress', icon: Minimize2 },
   { id: 'to-images', label: 'PDF to Images', icon: Images },
 ];
-
-const CAMERA_CONSTRAINTS = {
-  width: { ideal: 1920 },
-  height: { ideal: 1080 },
-  facingMode: { ideal: 'environment' }
-};
 
 export function PDFTools() {
   const { saveOperation, getRecentOperations } = useOperationsCache();
@@ -168,46 +136,13 @@ export function PDFTools() {
     compressed: null
   });
   const webcamRef = useRef<Webcam | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 8,
-      },
-    }),
+    useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    
-    if (over && active.id !== over.id) {
-      setImages((items) => {
-        const oldIndex = items.findIndex(item => item.id === active.id);
-        const newIndex = items.findIndex(item => item.id === over.id);
-        return arrayMove(items, oldIndex, newIndex);
-      });
-    }
-    
-    setActiveId(null);
-  };
-
-  const handleDragCancel = () => {
-    setActiveId(null);
-  };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const allowedTypes = activeTab === 'create' ? ALLOWED_IMAGE_TYPES : ALLOWED_PDF_TYPES;
@@ -215,7 +150,7 @@ export function PDFTools() {
     const validFiles = acceptedFiles.filter(file => {
       const validation = validateFile(file, allowedTypes);
       if (!validation.isValid) {
-        setError(validation.error);
+        setError(validation.error || 'Invalid file type');
         return false;
       }
       return true;
@@ -263,7 +198,7 @@ export function PDFTools() {
         fetch(imageSrc)
           .then(res => res.blob())
           .then(blob => {
-            const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
             const newImage = {
               id: Math.random().toString(36).substr(2, 9),
               file,
@@ -275,6 +210,29 @@ export function PDFTools() {
       }
     }
   }, [webcamRef]);
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (over && active.id !== over.id) {
+      setImages((items) => {
+        const oldIndex = items.findIndex(item => item.id === active.id);
+        const newIndex = items.findIndex(item => item.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const handleRemoveImage = useCallback((id: string) => {
+    setImages(prev => {
+      const imageToRemove = prev.find(img => img.id === id);
+      if (imageToRemove) {
+        revokeBlobUrl(imageToRemove.preview);
+      }
+      return prev.filter(img => img.id !== id);
+
+    });
+  }, []);
 
   const handleCreatePDF = async () => {
     if (images.length === 0) {
@@ -528,135 +486,167 @@ export function PDFTools() {
       setLoading(false);
     }
   };
+const handlePDFToImages = async () => {
+  if (files.length !== 1) {
+    setError('Please select one PDF file');
+    return;
+  }
 
-  const handlePDFToImages = async () => {
-    if (files.length !== 1) {
-      setError('Please select one PDF file');
-      return;
+  setLoading(true);
+  setError(null);
+
+  try {
+    const pdfFile = files[0].file;
+    if (!pdfFile.type.includes('pdf')) {
+      throw new Error('Invalid file type - only PDF files are supported');
     }
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const pdfData = await files[0].file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-      const zip = new JSZip();
-      const images: Blob[] = [];
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
-        
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d')!;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        
-        await page.render({
-          canvasContext: context,
-          viewport: viewport
-        }).promise;
-        
-        // Convert to PNG for better quality
-        const blob = await new Promise<Blob>((resolve) => {
-          canvas.toBlob((b) => resolve(b!), 'image/png', 1.0);
-        });
-        
-        images.push(blob);
-        zip.file(`page-${i}.png`, blob);
-      }
-
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      
-      if (result) revokeBlobUrl(result);
-      const newResult = createSecureObjectURL(zipBlob);
-      setResult(newResult);
-      setResultBlob(zipBlob);
-
-      // Save first image as preview
-      if (images.length > 0) {
-        saveOperation({
-          type: 'pdf_to_images',
-          metadata: {
-            filename: files[0].file.name,
-            fileSize: zipBlob.size,
-            settings: { pageCount: pdf.numPages }
-          },
-          preview: createSecureObjectURL(images[0])
-        });
-      }
-    } catch (err) {
-      setError('Error converting PDF to images. Please try again.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleProcess = () => {
-    switch (activeTab) {
-      case 'create':
-        handleCreatePDF();
-        break;
-      case 'merge':
-        handleMergePDF();
-        break;
-      case 'split':
-        handleSplitPDF();
-        break;
-      case 'compress':
-        handleCompressPDF();
-        break;
-      case 'to-images':
-        handlePDFToImages();
-        break;
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!resultBlob) return;
-
-    try {
-      const filename = activeTab === 'to-images' ? 'pdf-images.zip' : `processed-${activeTab}.pdf`;
-      const link = createSecureDownloadLink(resultBlob, filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error('Error downloading file:', err);
-      setError('Error downloading file. Please try again.');
-    }
-  };
-
-  const resetFiles = () => {
-    images.forEach(image => revokeBlobUrl(image.preview));
-    files.forEach(file => revokeBlobUrl(file.preview));
-    if (result) revokeBlobUrl(result);
+    const pdfData = await pdfFile.arrayBuffer();
     
-    setFiles([]);
-    setImages([]);
-    setResult(null);
-    setResultBlob(null);
-    setError(null);
-    setShowCamera(false);
-    setPreviewSize({ original: null, compressed: null });
-  };
+    const pdf = await pdfjsLib.getDocument({
+      data: pdfData,
+      verbosity: 0
+    }).promise.catch(err => {
+      throw new Error(`Failed to load PDF: ${err.message}`);
+    });
+    const zip = new JSZip();
+    const imageBlobs: Blob[] = [];
 
-  const formatFileSize = (bytes: number | null) => {
-    if (bytes === null) return 'Unknown';
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+    console.log(`Starting PDF to Images conversion. Pages: ${pdf.numPages}`);
 
-  const calculateReduction = () => {
-    if (!previewSize.original || !previewSize.compressed) return null;
-    const reduction = ((previewSize.original - previewSize.compressed) / previewSize.original) * 100;
-    return Math.round(reduction);
-  };
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error(`Failed to get 2D context for page ${i}`);
+      }
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      console.log(`Rendering page ${i} at ${viewport.width}x${viewport.height}`);
+
+      await page.render({
+        canvasContext: context,
+        viewport: viewport,
+      }).promise;
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (b) => {
+            if (b) resolve(b);
+            else reject(new Error(`Failed to convert page ${i} to blob`));
+          },
+          'image/png',
+          1.0
+        );
+      });
+
+      imageBlobs.push(blob);
+      zip.file(`page-${i}.png`, blob);
+      console.log(`Page ${i} added to ZIP`);
+    }
+
+    const zipBlob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE', // Optional: reduces file size
+    });
+
+    console.log(`ZIP file generated. Size: ${zipBlob.size} bytes`);
+
+    if (result) revokeBlobUrl(result);
+    const newResult = createSecureObjectURL(zipBlob);
+    setResult(newResult);
+    setResultBlob(zipBlob);
+
+    if (imageBlobs.length > 0) {
+      saveOperation({
+        type: 'pdf_to_images',
+        metadata: {
+          filename: files[0].file.name,
+          fileSize: zipBlob.size,
+          settings: { pageCount: pdf.numPages },
+        },
+        preview: createSecureObjectURL(imageBlobs[0]),
+      });
+    }
+
+    console.log('PDF to Images conversion completed successfully');
+  } catch (error: unknown) {
+    console.error('PDF to Images Error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error occurred during conversion';
+    setError(`PDF to images failed: ${message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleProcess = () => {
+  switch (activeTab) {
+    case 'create':
+      handleCreatePDF();
+      break;
+    case 'merge':
+      handleMergePDF();
+      break;
+    case 'split':
+      handleSplitPDF();
+      break;
+    case 'compress':
+      handleCompressPDF();
+      break;
+    case 'to-images':
+      handlePDFToImages();
+      break;
+  }
+};
+
+const handleDownload = async () => {
+  if (!resultBlob) return;
+
+  try {
+    const filename = activeTab === 'to-images' ? 'pdf-images.zip' : `processed-${activeTab}.pdf`;
+    const link = createSecureDownloadLink(resultBlob, filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (err) {
+    console.error('Error downloading file:', err);
+    setError('Error downloading file. Please try again.');
+  }
+};
+
+const resetFiles = () => {
+  images.forEach(image => revokeBlobUrl(image.preview));
+  files.forEach(file => revokeBlobUrl(file.preview));
+  if (result) revokeBlobUrl(result);
+  
+  setFiles([]);
+  setImages([]);
+  setResult(null);
+  setResultBlob(null);
+  setError(null);
+  setShowCamera(false);
+  setPreviewSize({ original: null, compressed: null });
+};
+
+const formatFileSize = (bytes: number | null) => {
+  if (bytes === null) return 'Unknown';
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+const calculateReduction = () => {
+  if (!previewSize.original || !previewSize.compressed) return null;
+  const reduction = ((previewSize.original - previewSize.compressed) / previewSize.original) * 100;
+  return Math.round(reduction);
+};
 
   const renderImageGrid = () => {
     if (activeTab !== 'create' || images.length === 0) return null;
@@ -669,7 +659,7 @@ export function PDFTools() {
           </h3>
           <button
             onClick={resetFiles}
-            className="text-gray-500 hover:text-gray-700 p-2"
+            className="text-gray-500 hover:text-gray-700"
             title="Remove all images"
           >
             <X className="w-5 h-5" />
@@ -678,10 +668,7 @@ export function PDFTools() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-          modifiers={[restrictToWindowEdges]}
         >
           <SortableContext
             items={images.map(img => img.id)}
@@ -693,53 +680,12 @@ export function PDFTools() {
                   key={image.id}
                   id={image.id}
                   preview={image.preview}
-                  onRemove={removeImage}
-                  isDragging={image.id === activeId}
+                  onRemove={handleRemoveImage}
                 />
               ))}
             </div>
           </SortableContext>
-          <DragOverlay dropAnimation={dropAnimation}>
-            {activeId ? (
-              <DraggableImage
-                preview={images.find(img => img.id === activeId)?.preview || ''}
-              />
-            ) : null}
-          </DragOverlay>
         </DndContext>
-      </div>
-    );
-  };
-
-  const renderCamera = () => {
-    if (!showCamera) return null;
-
-    return (
-      <div className="space-y-4">
-        <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-          <Webcam
-            ref={webcamRef}
-            audio={false}
-            screenshotFormat="image/jpeg"
-            videoConstraints={CAMERA_CONSTRAINTS}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        </div>
-        <div className="flex justify-center gap-2">
-          <button
-            onClick={captureFromCamera}
-            className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
-          >
-            <Camera className="w-5 h-5 mr-2" />
-            Capture
-          </button>
-          <button
-            onClick={() => setShowCamera(false)}
-            className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
       </div>
     );
   };
@@ -794,7 +740,33 @@ export function PDFTools() {
         </div>
 
         <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
-          {showCamera ? renderCamera() : (
+          {showCamera ? (
+            <div className="space-y-4">
+              <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                <Webcam
+                  ref={webcamRef}
+                  audio={false}
+                  screenshotFormat="image/jpeg"
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex justify-center gap-2">
+                <button
+                  onClick={captureFromCamera}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
+                >
+                  <Camera className="w-5 h-5 mr-2" />
+                  Capture
+                </button>
+                <button
+                  onClick={() => setShowCamera(false)}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
             <>
               <div
                 {...getRootProps()}
@@ -870,8 +842,7 @@ export function PDFTools() {
               value={splitPages}
               onChange={(e) => setSplitPages(e.target.value)}
               placeholder="Enter page ranges"
-              className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-in
-              digo-500 focus:ring-indigo-500"
+              className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
             />
           </div>
         )}
@@ -916,13 +887,15 @@ export function PDFTools() {
         {error && (
           <div className="mt-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
             {error}
+          
           </div>
         )}
 
         <div className="mt-6 flex flex-col sm:flex-row gap-3">
           <button
             onClick={handleProcess}
-            disabled={loading || (activeTab === 'create' ? images.length === 0 : files.length === 0)}
+            disabled={loading || (activeTab === 'create' ?
+              images.length === 0 : files.length === 0)}
             className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
           >
             {loading ? (

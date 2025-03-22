@@ -275,14 +275,20 @@ function HomePage() {
   return (
     <>
       <SEOHeaders 
-        title="Free Online PDF & Image Tools | Convert, Compress, Enhance"
-        description="All-in-one platform for document and image processing. Convert PDFs, compress images, and enhance photos online for free."
+        title="Free Online PDF & Image Tools | Convert, Compress, Merge & Enhance Files"
+        description="All-in-One Online PDF & Image Processing Tool | Convert, Compress, Merge & Enhance for Free"
         keywords={[
           'pdf converter online',
           'image compression tool',
           'photo enhancer free',
           'merge pdf files',
           'compress images online',
+          'jpg to pdf converter',
+          'image resizer online',
+          'convert jpg to png online',
+          'png to jpg converter',
+          'image upscaling tool',
+          'crop images online free',
           'ai image enhancement'
         ]}
       />
@@ -317,13 +323,13 @@ function HomePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
             <FeatureCard
               icon={Image}
-              title="Image Tools"
-              description="Convert and compress your images with our powerful image tools"
+              title="Image size reduce"
+              description="Quickly compress and convert images without losing quality."
               to="/image-tools"
             />
             <FeatureCard
               icon={FileUp}
-              title="PDF Creation"
+              title="Image to PDF"
               description="Convert your images into professional PDF documents"
               to="/pdf-tools"
             />
@@ -425,14 +431,14 @@ function Layout({ children }: { children: React.ReactNode }) {
             <div className="flex-shrink-0">
               <Link to="/" className="flex items-center space-x-2">
                 <FileText className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-600" />
-                <span className="text-xl sm:text-2xl font-bold text-gray-900">Bropdf</span>
+                <span className="text-xl sm:text-2xl font-bold text-gray-900">Hallopdf</span>
               </Link>
             </div>
 
             <div className="hidden sm:flex items-center justify-center flex-1 px-8">
               <div className="flex space-x-6">
                 <Link to="/" className="text-gray-600 hover:text-gray-900">Home</Link>
-                <Link to="/image-tools" className="text-gray-600 hover:text-gray-900">Image Tools</Link>
+                <Link to="/image-tools" className="text-gray-600 hover:text-gray-900">Image Size Reduce </Link>
                 <Link to="/pdf-tools" className="text-gray-600 hover:text-gray-900">PDF Tools</Link>
                 <Link to="/digital-enhancer" className="text-gray-600 hover:text-gray-900">Digital Enhancer</Link>
               </div>
@@ -496,7 +502,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                 className="block text-gray-600 hover:text-gray-900"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Image Tools
+                Image Size Reduce
               </Link>
               <Link
                 to="/pdf-tools"
@@ -552,7 +558,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <div>
               <div className="flex items-center space-x-2 mb-4">
                 <FileText className="w-6 h-6" />
-                <span className="text-xl font-bold">Bropdf</span>
+                <span className="text-xl font-bold">Hallopdf</span>
               </div>
               <p className="text-gray-400">
                 Your all-in-one solution for document and image conversion
@@ -562,7 +568,7 @@ function Layout({ children }: { children: React.ReactNode }) {
               <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
               <ul className="space-y-2">
                 <li><Link to="/" className="text-gray-400 hover:text-white">Home</Link></li>
-                <li><Link to="/image-tools" className="text-gray-400 hover:text-white">Image Tools</Link></li>
+                <li><Link to="/image-tools" className="text-gray-400 hover:text-white">Image Size Reduce</Link></li>
                 <li><Link to="/pdf-tools" className="text-gray-400 hover:text-white">PDF Tools</Link></li>
                 <li><Link to="/digital-enhancer" className="text-gray-400 hover:text-white">Digital Enhancer</Link></li>
               </ul>
@@ -577,7 +583,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 sm:mt-12 pt-8 text-center text-gray-400">
-            <p>&copy; {new Date().getFullYear()} Bropdf. All rights reserved.</p>
+            <p>&copy; {new Date().getFullYear()} Hallopdf. All rights reserved.</p>
           </div>
         </div>
       </footer>
