@@ -16,10 +16,10 @@ export function SEOHeaders({
   canonicalUrl
 }: SEOProps) {
   const location = useLocation();
-  const baseUrl = 'https://bropdf.com'; // Replace with your actual domain
+  const baseUrl = 'https://hallopdf.netlify.app/'; // Replace with your actual domain
   const currentUrl = canonicalUrl || `${baseUrl}${location.pathname}`;
 
-  const defaultTitle = 'Free Online PDF & Image Tools | Convert, Compress, Enhance | Bropdf';
+  const defaultTitle = 'Free Online PDF & Image Tools | Convert, Compress, Enhance | Hallopdf';
   const defaultDescription = 'Convert images to PDF, merge PDFs, compress files, and enhance images online for free. No registration required. Fast, secure, and high-quality document conversion tools.';
   const defaultKeywords = [
     'convert image to pdf',
