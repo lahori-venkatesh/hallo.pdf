@@ -1,6 +1,7 @@
 {
-  "name": "Bropdf - Document & Image Tools",
-  "short_name": "Bropdf",
+  "name": "Hallopdf - Document & Image Tools",
+  "short_name": "Hallopdf",
+  "scope": "/",
   "description": "Convert, compress, and enhance your documents and images with ease",
   "start_url": "/",
   "display": "standalone",
@@ -10,52 +11,28 @@
   "categories": ["productivity", "utilities"],
   "icons": [
     {
-      "src": "/icons/icon-72x72.png",
-      "sizes": "72x72",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
       "src": "/icons/icon-96x96.png",
       "sizes": "96x96",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-128x128.png",
       "sizes": "128x128",
       "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-144x144.png",
-      "sizes": "144x144",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-152x152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-384x384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
   "screenshots": [
@@ -102,5 +79,27 @@
         }
       ]
     }
-  }
+  },
+  "ios_splash_screens": [
+    {
+      "src": "/splashscreens/apple-splash-1125-2436.png",
+      "sizes": "1125x2436",
+      "platform": "ios"
+    },
+    {
+      "src": "/splashscreens/apple-splash-1536-2048.png",
+      "sizes": "1536x2048",
+      "platform": "ios"
+    },
+    {
+      "src": "/splashscreens/apple-splash-1668-2388.png",
+      "sizes": "1668x2388",
+      "platform": "ios"
+    },
+    {
+      "src": "/splashscreens/apple-splash-2048-2732.png",
+      "sizes": "2048x2732",
+      "platform": "ios"
+    }
+  ]
 }
