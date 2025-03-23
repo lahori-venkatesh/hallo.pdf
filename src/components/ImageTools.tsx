@@ -1,8 +1,7 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import imageCompression from 'browser-image-compression';
 import { Upload, Download, Image as ImageIcon, Loader2, X, Camera, FileText, Settings2, Crop, RotateCw } from 'lucide-react';
-import Webcam from 'react-webcam';
 import { jsPDF } from 'jspdf';
 import { useOperationsCache } from '../utils/operationsCache';
 import { SEOHeaders } from './SEOHeaders';
@@ -39,15 +38,14 @@ export function ImageTools() {
   const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCamera, setShowCamera] = useState(false);
   const [showCropModal, setShowCropModal] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [points, setPoints] = useState<Point[]>([]);
   const [rotation, setRotation] = useState(0);
   const [dragState, setDragState] = useState<{ index: number | 'rotate' | null; type: 'move' | 'rotate' | null }>({ index: null, type: null });
-  const webcamRef = useRef<Webcam>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const cropContainerRef = useRef<HTMLDivElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [settings, setSettings] = useState<ConversionSettings>({
     mode: 'quality', targetSize: null, quality: 80, format: 'jpeg', width: null, height: null, maintainAspectRatio: true
   });
@@ -90,26 +88,23 @@ export function ImageTools() {
     maxFiles: 1
   });
 
-  const captureFromCamera = useCallback(() => {
-    const imageSrc = webcamRef.current?.getScreenshot();
-    if (!imageSrc) {
-      setError('Camera capture failed');
+  const handleCameraCapture = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
+      setError('Invalid file type from camera');
       return;
     }
-    fetch(imageSrc)
-      .then(res => res.blob())
-      .then(blob => {
-        const file = new File([blob], 'capture.jpg', { type: 'image/jpeg' });
-        const previewUrl = createSecureObjectURL(file);
-        setCropImageSrc(previewUrl);
-        setShowCropModal(true);
-        setImage({ file, preview: previewUrl });
-        setShowCamera(false);
-        setConvertedImage(null);
-        setConvertedBlob(null);
-        setError(null);
-      })
-      .catch(() => setError('Camera capture failed'));
+    const previewUrl = createSecureObjectURL(file);
+    setCropImageSrc(previewUrl);
+    setShowCropModal(true);
+    setImage({ file, preview: previewUrl });
+    setConvertedImage(null);
+    setConvertedBlob(null);
+    setError(null);
+    // Reset the input value to allow re-capturing
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
   }, []);
 
   const handleImageLoad = useCallback(() => {
@@ -297,7 +292,6 @@ export function ImageTools() {
     setConvertedImage(null);
     setConvertedBlob(null);
     setError(null);
-    setShowCamera(false);
     setShowCropModal(false);
     setCropImageSrc(null);
     setPoints([]);
@@ -312,7 +306,11 @@ export function ImageTools() {
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
   }, []);
 
-  const videoConstraints = useMemo(() => ({ facingMode: { exact: 'environment' } }), []);
+  const triggerCamera = useCallback(() => {
+    if (cameraInputRef.current) {
+      cameraInputRef.current.click();
+    }
+  }, []);
 
   return (
     <>
@@ -321,17 +319,7 @@ export function ImageTools() {
         <h1 className="text-2xl font-bold text-gray-900 mb-6 text-center">Image Tools</h1>
         <AdComponent slot="image-tools-top" className="mb-6" style={{ minHeight: '90px' }} />
         <div className="bg-white rounded-xl shadow-lg p-4">
-          {showCamera ? (
-            <div className="space-y-4">
-              <Webcam ref={webcamRef} audio={false} screenshotFormat="image/jpeg" videoConstraints={videoConstraints} className="w-full rounded-lg" />
-              <div className="flex justify-center gap-2">
-                <button onClick={captureFromCamera} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center">
-                  <Camera className="w-5 h-5 mr-2" />Capture
-                </button>
-                <button onClick={() => setShowCamera(false)} className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">Cancel</button>
-              </div>
-            </div>
-          ) : showCropModal && cropImageSrc ? (
+          {showCropModal && cropImageSrc ? (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-800">Crop Image</h3>
               <div
@@ -416,9 +404,20 @@ export function ImageTools() {
                 <p className="text-gray-600">{isDragActive ? 'Drop here' : 'Drag & drop or tap to select'}</p>
                 <p className="text-sm text-gray-500 mt-2">JPEG, PNG, WebP, GIF, SVG</p>
               </div>
-              <button onClick={() => setShowCamera(true)} className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center mx-auto">
-                <Camera className="w-5 h-5 mr-2" />Use Camera
+              <button 
+                onClick={triggerCamera} 
+                className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center mx-auto"
+              >
+                <Camera className="w-5 h-5 mr-2" />Capture Document
               </button>
+              <input
+                type="file"
+                ref={cameraInputRef}
+                accept="image/*"
+                capture="environment"
+                onChange={handleCameraCapture}
+                className="hidden"
+              />
             </div>
           ) : (
             <div className="space-y-6">
