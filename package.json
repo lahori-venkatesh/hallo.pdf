@@ -28,6 +28,7 @@
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
     "react-helmet-async": "^2.0.4",
+    "react-image-crop": "^11.0.7",
     "react-router-dom": "^6.22.3",
     "react-webcam": "^7.2.0",
     "sanitize-filename": "^1.6.3",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^8.56.0",
+    "@types/lodash": "^4.17.16",
     "@types/mime-types": "^2.1.4",
     "@types/path-browserify": "^1.0.2",
     "@types/pdfjs-dist": "^2.10.378",

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  root: '.', // Explicitly set root to project directory where index.html resides
+  root: '.', // Ensures index.html is in the correct root directory
   plugins: [
     react(),
     VitePWA({
@@ -35,6 +35,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // Increases caching limit to 15MB
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/docs\.opencv\.org\/.*/i,
@@ -86,6 +87,10 @@ export default defineConfig({
               },
             },
           },
+          {
+            urlPattern: /opencv\.js$/, // Avoid caching opencv.js if not needed
+            handler: 'NetworkOnly',
+          },
         ],
         skipWaiting: true,
         clientsClaim: true,
@@ -94,12 +99,12 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: {
-    exclude: ['lucide-react'],
+    exclude: [], // Removed lucide-react exclusion unless explicitly needed
   },
   resolve: {
     alias: {
       path: 'path-browserify',
-      '@workers': '/src/workers', // Alias for worker directory (optional)
+      '@workers': '/src/workers', // Alias for worker directory
     },
   },
   server: {
@@ -116,16 +121,16 @@ export default defineConfig({
   },
   build: {
     target: ['es2020'],
+    chunkSizeWarningLimit: 1500, // Increased limit to 1.5MB
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: 'assets/[name].[hash].[ext]',
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'pdf-vendor': ['pdf-lib', 'jspdf', 'pdfjs-dist'],
-          'image-vendor': ['browser-image-compression'],
-          'ui-vendor': ['lucide-react', '@dnd-kit/core', '@dnd-kit/sortable'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            return 'vendor'; // Moves dependencies to a separate chunk
+          }
         },
       },
     },

@@ -1,11 +1,11 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import imageCompression from 'browser-image-compression';
-import { Upload, Download, Image as ImageIcon, Loader2, X, Camera, FileText, Settings2 } from 'lucide-react';
+import { Upload, Download, Image as ImageIcon, Loader2, X, Camera, FileText, Settings2, Crop, RotateCw } from 'lucide-react';
 import Webcam from 'react-webcam';
 import { jsPDF } from 'jspdf';
 import { useOperationsCache } from '../utils/operationsCache';
-import { CachedOperation } from '../types/cache';
+//import { CachedOperation } from '../types/cache';
 import { SEOHeaders } from './SEOHeaders';
 import { AdComponent } from './AdComponent';
 import { 
@@ -31,6 +31,11 @@ interface ConversionSettings {
   maintainAspectRatio: boolean;
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
 const formatOptions = [
   { value: 'jpeg', label: 'JPEG - Best for photos', mimeType: 'image/jpeg' },
   { value: 'png', label: 'PNG - Best for graphics', mimeType: 'image/png' },
@@ -51,14 +56,22 @@ const sizeOptions = [
 ];
 
 export function ImageTools() {
-  const { saveOperation, getRecentOperations } = useOperationsCache();
+  const { saveOperation } = useOperationsCache();
   const [image, setImage] = useState<PreviewImage | null>(null);
   const [convertedImage, setConvertedImage] = useState<string | null>(null);
   const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [points, setPoints] = useState<Point[]>([]);
+  const [rotation, setRotation] = useState(0);
+  const [isDragging, setIsDragging] = useState<number | null>(null);
+  const [isRotating, setIsRotating] = useState(false);
   const webcamRef = useRef<Webcam | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const cropContainerRef = useRef<HTMLDivElement | null>(null);
   const [settings, setSettings] = useState<ConversionSettings>({
     mode: 'quality',
     targetSize: null,
@@ -69,22 +82,47 @@ export function ImageTools() {
     maintainAspectRatio: true
   });
 
+  const dataURLtoBlob = (dataURL: string): Blob => {
+    const [header, data] = dataURL.split(',');
+    const mimeMatch = header.match(/:(.*?);/);
+    if (!mimeMatch) throw new Error('Invalid data URL');
+    const mime = mimeMatch[1];
+    const binary = atob(data);
+    const array = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      array[i] = binary.charCodeAt(i);
+    }
+    return new Blob([array], { type: mime });
+  };
+
+  const blobToDataURL = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (file) {
       const validation = validateFile(file, ALLOWED_IMAGE_TYPES);
       if (!validation.isValid) {
-        setError(validation.error);
+        if (validation.error) {
+          setError(validation.error);
+        } else {
+          setError('An unknown error occurred'); // or some other default error message
+        }
         return;
       }
 
-      if (image?.preview) {
-        revokeBlobUrl(image.preview);
-      }
-
+      const previewUrl = createSecureObjectURL(file);
+      setCropImageSrc(previewUrl);
+      setShowCropModal(true);
       setImage({
         file,
-        preview: createSecureObjectURL(file)
+        preview: previewUrl
       });
       setConvertedImage(null);
       setConvertedBlob(null);
@@ -109,22 +147,208 @@ export function ImageTools() {
           .then(blob => {
             const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
             
-            if (image?.preview) {
-              revokeBlobUrl(image.preview);
-            }
-
+            const previewUrl = createSecureObjectURL(file);
+            setCropImageSrc(previewUrl);
+            setShowCropModal(true);
             setImage({
               file,
-              preview: createSecureObjectURL(file)
+              preview: previewUrl
             });
             setShowCamera(false);
             setConvertedImage(null);
             setConvertedBlob(null);
             setError(null);
+          })
+          .catch(err => {
+            console.error('Error capturing image from camera:', err);
+            setError('Failed to capture image from camera.');
           });
+      } else {
+        setError('Failed to capture image. Please try again.');
       }
     }
   }, [webcamRef, image]);
+
+  const handleImageLoad = () => {
+    if (imgRef.current && cropContainerRef.current) {
+      const { width, height } = imgRef.current;
+
+      const cropWidth = width * 0.8;
+      const cropHeight = height * 0.8;
+      const cropX = (width - cropWidth) / 2;
+      const cropY = (height - cropHeight) / 2;
+
+      setPoints([
+        { x: cropX, y: cropY },
+        { x: cropX + cropWidth, y: cropY },
+        { x: cropX + cropWidth, y: cropY + cropHeight },
+        { x: cropX, y: cropY + cropHeight },
+      ]);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, index: number | 'rotate') => {
+    if (index === 'rotate') {
+      setIsRotating(true);
+    } else {
+      setIsDragging(index);
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cropContainerRef.current || (isDragging === null && !isRotating)) return;
+
+    const rect = cropContainerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (isRotating) {
+      const center = points.reduce(
+        (acc, p) => ({ x: acc.x + p.x / 4, y: acc.y + p.y / 4 }),
+        { x: 0, y: 0 }
+      );
+      const angle = Math.atan2(y - center.y, x - center.x) - Math.PI / 2;
+      const newRotation = (angle * 180) / Math.PI;
+      setRotation(newRotation);
+
+      const newPoints = points.map((p) => {
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const radius = Math.sqrt(dx * dx + dy * dy);
+        const currentAngle = Math.atan2(dy, dx);
+        const newAngle = currentAngle + (newRotation * Math.PI) / 180;
+        return {
+          x: center.x + radius * Math.cos(newAngle),
+          y: center.y + radius * Math.sin(newAngle),
+        };
+      });
+      setPoints(newPoints);
+    } else if (isDragging !== null) {
+      const newPoints = [...points];
+      newPoints[isDragging] = { x: Math.max(0, Math.min(x, rect.width)), y: Math.max(0, Math.min(y, rect.height)) };
+      setPoints(newPoints);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(null);
+    setIsRotating(false);
+  };
+
+  const applyCrop = async (imageSrc: string, points: Point[]): Promise<string> => {
+    try {
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageSrc;
+      });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      if (!ctx) {
+        throw new Error('Failed to get canvas context');
+      }
+
+      const scaleX = img.width / (imgRef.current?.width || img.width);
+      const scaleY = img.height / (imgRef.current?.height || img.height);
+
+      const scaledPoints = points.map((p) => ({
+        x: p.x * scaleX,
+        y: p.y * scaleY,
+      }));
+
+      const minX = Math.min(...scaledPoints.map(p => p.x));
+      const maxX = Math.max(...scaledPoints.map(p => p.x));
+      const minY = Math.min(...scaledPoints.map(p => p.y));
+      const maxY = Math.max(...scaledPoints.map(p => p.y));
+
+      const cropWidth = maxX - minX;
+      const cropHeight = maxY - minY;
+
+      if (cropWidth <= 0 || cropHeight <= 0) {
+        throw new Error('Invalid crop dimensions: width or height is zero or negative');
+      }
+
+      canvas.width = cropWidth;
+      canvas.height = cropHeight;
+
+      // Apply rotation if any
+      if (rotation !== 0) {
+        ctx.translate(cropWidth / 2, cropHeight / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.translate(-cropWidth / 2, -cropHeight / 2);
+      }
+
+      ctx.drawImage(
+        img,
+        minX,
+        minY,
+        cropWidth,
+        cropHeight,
+        0,
+        0,
+        cropWidth,
+        cropHeight
+      );
+
+      const croppedBlob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to create blob from canvas'));
+          }
+        }, 'image/jpeg', 1.0);
+      });
+
+      return await blobToDataURL(croppedBlob);
+    } catch (err) {
+      console.error('Error in applyCrop:', err);
+      throw err;
+    }
+  };
+
+  const handleCropComplete = async () => {
+    if (!cropImageSrc || points.length !== 4) {
+      setError('Invalid crop selection. Please adjust the crop area and try again.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const croppedSrc = await applyCrop(cropImageSrc, points);
+      if (!croppedSrc) {
+        throw new Error('Cropped image data is empty');
+      }
+
+      const croppedBlob = dataURLtoBlob(croppedSrc);
+      const croppedFile = new File([croppedBlob], image?.file.name || 'cropped-image.jpg', { type: 'image/jpeg' });
+
+      const oldPreview = image?.preview;
+
+      setImage({
+        file: croppedFile,
+        preview: croppedSrc
+      });
+
+      if (oldPreview) {
+        revokeBlobUrl(oldPreview);
+      }
+
+      setShowCropModal(false);
+      setCropImageSrc(null);
+      setPoints([]);
+      setRotation(0);
+    } catch (err) {
+      console.error('Error in handleCropComplete:', err);
+      setError('Cropping failed: ' + (err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleConversion = async () => {
     if (!image) {
@@ -139,7 +363,6 @@ export function ImageTools() {
       let resultBlob: Blob;
 
       if (settings.format === 'pdf') {
-        // Convert to PDF
         const pdf = new jsPDF({
           orientation: 'portrait',
           unit: 'px'
@@ -155,7 +378,6 @@ export function ImageTools() {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
         
-        // Calculate dimensions
         const aspectRatio = img.width / img.height;
         let width = img.width;
         let height = img.height;
@@ -185,7 +407,6 @@ export function ImageTools() {
 
         resultBlob = pdf.output('blob');
       } else {
-        // Handle image formats
         const options = {
           maxSizeMB: settings.mode === 'size' ? settings.targetSize || 1 : undefined,
           maxWidthOrHeight: Math.max(settings.width || 0, settings.height || 0) || undefined,
@@ -256,6 +477,10 @@ export function ImageTools() {
     setConvertedBlob(null);
     setError(null);
     setShowCamera(false);
+    setShowCropModal(false);
+    setCropImageSrc(null);
+    setPoints([]);
+    setRotation(0);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -264,6 +489,10 @@ export function ImageTools() {
     const sizes = ['Bytes', 'KB', 'MB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const videoConstraints = {
+    facingMode: { ideal: 'environment' }
   };
 
   return (
@@ -301,6 +530,7 @@ export function ImageTools() {
                   ref={webcamRef}
                   audio={false}
                   screenshotFormat="image/jpeg"
+                  videoConstraints={videoConstraints}
                   className="absolute inset-0 w-full h-full object-cover"
                 />
               </div>
@@ -317,6 +547,95 @@ export function ImageTools() {
                   className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          ) : showCropModal && cropImageSrc ? (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-800">Crop Image</h3>
+              <div
+                ref={cropContainerRef}
+                className="relative w-full h-full overflow-auto"
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+              >
+                <img
+                  ref={imgRef}
+                  src={cropImageSrc}
+                  alt="Crop"
+                  onLoad={handleImageLoad}
+                  className="w-auto h-auto max-w-full max-h-[70vh]"
+                />
+                {points.length === 4 && (
+                  <>
+                    <svg
+                      className="absolute top-0 left-0 pointer-events-none"
+                      width={imgRef.current?.width || 0}
+                      height={imgRef.current?.height || 0}
+                    >
+                      <polygon
+                        points={points.map((p) => `${p.x},${p.y}`).join(' ')}
+                        fill="rgba(79, 70, 229, 0.3)"
+                        stroke="rgba(79, 70, 229, 1)"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                    {points.map((point, index) => (
+                      <div
+                        key={index}
+                        className="absolute w-4 h-4 bg-indigo-600 rounded-full cursor-move"
+                        style={{
+                          left: `${point.x}px`,
+                          top: `${point.y}px`,
+                          transform: 'translate(-50%, -50%)',
+                        }}
+                        onMouseDown={(e) => handleMouseDown(e, index)}
+                      />
+                    ))}
+                    <div
+                      className="absolute w-4 h-4 bg-green-600 rounded-full cursor-pointer"
+                      style={{
+                        left: `${(points[0].x + points[1].x) / 2}px`,
+                        top: `${points[0].y - 30}px`,
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                      onMouseDown={(e) => handleMouseDown(e, 'rotate')}
+                    >
+                      <RotateCw className="w-4 h-4 text-white" />
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    setShowCropModal(false);
+                    setCropImageSrc(null);
+                    setPoints([]);
+                    setRotation(0);
+                    resetImage();
+                  }}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCropComplete}
+                  disabled={loading}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      Cropping...
+                    </>
+                  ) : (
+                    <>
+                      <Crop className="w-5 h-5 mr-2" />
+                      Apply Crop
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -560,8 +879,6 @@ export function ImageTools() {
             </div>
           )}
         </div>
-
-        {/* Ads and recent operations sections remain unchanged */}
       </div>
     </>
   );
