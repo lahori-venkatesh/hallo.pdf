@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, Download, Loader2, X, Crop, RotateCw, Wand2 } from 'lucide-react';
+
 interface ImageState {
   raw: string;
   preprocessed: string;
@@ -21,9 +22,9 @@ interface Point {
 }
 
 const defaultEnhancements: Enhancement = {
-  brightness: 100, // Neutral starting point
-  contrast: 100,   // Neutral starting point
-  saturation: 100, // Neutral starting point
+  brightness: 100,
+  contrast: 100,
+  saturation: 100,
 };
 
 interface OpenCV {
@@ -92,12 +93,12 @@ export function DigitalImageEnhancer() {
   const [showCropModal, setShowCropModal] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [points, setPoints] = useState<Point[]>([]);
-  const [ setRotation] = useState(0);
+  const [rotation, setRotation] = useState(0);
   const [isDragging, setIsDragging] = useState<number | null>(null);
   const [isRotating, setIsRotating] = useState(false);
   const [enhancements, setEnhancements] = useState<Enhancement>(defaultEnhancements);
-  const [quality, setQuality] = useState(80); // Default quality (0-100)
-  const [fileSize, setFileSize] = useState<number | null>(null); // Estimated file size in KB
+  const [quality, setQuality] = useState(80);
+  const [fileSize, setFileSize] = useState<number | null>(null);
   const [cvReady, setCvReady] = useState(false);
   const initializedRef = useRef(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -107,12 +108,8 @@ export function DigitalImageEnhancer() {
     if (!initializedRef.current) {
       initializedRef.current = true;
       initOpenCV()
-        .then(() => {
-          setCvReady(true);
-        })
-        .catch((err) => {
-          setError('Failed to load OpenCV: ' + err.message);
-        });
+        .then(() => setCvReady(true))
+        .catch((err) => setError('Failed to load OpenCV: ' + err.message));
     }
   }, []);
 
@@ -142,14 +139,12 @@ export function DigitalImageEnhancer() {
     const image = await createImageBitmap(dataURLtoBlob(imageSrc));
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
-
     const scale = Math.min(maxDimension / image.width, maxDimension / image.height, 1);
     canvas.width = image.width * scale;
     canvas.height = image.height * scale;
-
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const resizedBlob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0); // High quality for resizing
+      canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0);
     });
     return await blobToDataURL(resizedBlob);
   };
@@ -164,12 +159,7 @@ export function DigitalImageEnhancer() {
 
     const scaleX = image.width / (imgRef.current?.width || image.width);
     const scaleY = image.height / (imgRef.current?.height || image.height);
-
-    const scaledPoints = points.map((p) => ({
-      x: p.x * scaleX,
-      y: p.y * scaleY,
-    }));
-
+    const scaledPoints = points.map((p) => ({ x: p.x * scaleX, y: p.y * scaleY }));
     const sortedPoints = [...scaledPoints];
     sortedPoints.sort((a, b) => a.y - b.y);
     const top = sortedPoints.slice(0, 2).sort((a, b) => a.x - b.x);
@@ -177,16 +167,12 @@ export function DigitalImageEnhancer() {
     const orderedPoints = [top[0], top[1], bottom[1], bottom[0]];
 
     const src = window.cv.matFromImageData(ctx.getImageData(0, 0, image.width, image.height));
-
     const a4Width = 595;
     const a4Height = 842;
-
     const dstPoints = new window.cv.Mat(4, 1, window.cv.CV_32FC2 || 5);
     dstPoints.data32F.set([0, 0, a4Width - 1, 0, a4Width - 1, a4Height - 1, 0, a4Height - 1]);
-
     const srcPoints = new window.cv.Mat(4, 1, window.cv.CV_32FC2 || 5);
     srcPoints.data32F.set(orderedPoints.flatMap((p) => [p.x, p.y]));
-
     const transform = window.cv.getPerspectiveTransform(srcPoints, dstPoints);
     const warped = new window.cv.Mat();
     canvas.width = a4Width;
@@ -211,7 +197,7 @@ export function DigitalImageEnhancer() {
 
     window.cv.imshow(canvas, warped);
     const croppedBlob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0); // High quality for cropping
+      canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0);
     });
     const croppedDataURL = await blobToDataURL(croppedBlob);
 
@@ -231,9 +217,8 @@ export function DigitalImageEnhancer() {
     canvas.width = image.width;
     canvas.height = image.height;
     ctx.drawImage(image, 0, 0);
-
     const preprocessedBlob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0); // High quality for preprocessing
+      canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0);
     });
     return await blobToDataURL(preprocessedBlob);
   };
@@ -255,12 +240,10 @@ export function DigitalImageEnhancer() {
   const handleImageLoad = () => {
     if (imgRef.current && cropContainerRef.current) {
       const { width, height } = imgRef.current;
-
       const cropWidth = width * 0.8;
       const cropHeight = height * 0.8;
       const cropX = (width - cropWidth) / 2;
       const cropY = (height - cropHeight) / 2;
-
       setPoints([
         { x: cropX, y: cropY },
         { x: cropX + cropWidth, y: cropY },
@@ -270,7 +253,20 @@ export function DigitalImageEnhancer() {
     }
   };
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, index: number | 'rotate') => {
+  const getPositionFromEvent = (e: React.MouseEvent | React.TouchEvent, rect: DOMRect) => {
+    const isTouch = 'touches' in e;
+    const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+    const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    return { 
+      x: Math.max(0, Math.min(x, rect.width)), 
+      y: Math.max(0, Math.min(y, rect.height)) 
+    };
+  };
+
+  const handleStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>, index: number | 'rotate') => {
+    e.preventDefault();
     if (index === 'rotate') {
       setIsRotating(true);
     } else {
@@ -278,13 +274,13 @@ export function DigitalImageEnhancer() {
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!cropContainerRef.current || (isDragging === null && !isRotating)) return;
-
+    e.preventDefault();
+    
     const rect = cropContainerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const [rotation, setRotation] = useState(0);
+    const { x, y } = getPositionFromEvent(e, rect);
+
     if (isRotating) {
       const center = points.reduce(
         (acc, p) => ({ x: acc.x + p.x / 4, y: acc.y + p.y / 4 }),
@@ -308,12 +304,13 @@ export function DigitalImageEnhancer() {
       setPoints(newPoints);
     } else if (isDragging !== null) {
       const newPoints = [...points];
-      newPoints[isDragging] = { x: Math.max(0, Math.min(x, rect.width)), y: Math.max(0, Math.min(y, rect.height)) };
+      newPoints[isDragging] = { x, y };
       setPoints(newPoints);
     }
   };
 
-  const handleMouseUp = () => {
+  const handleEnd = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault();
     setIsDragging(null);
     setIsRotating(false);
   };
@@ -322,24 +319,19 @@ export function DigitalImageEnhancer() {
     if (!cropImageSrc || points.length !== 4) return;
     setLoading(true);
     try {
-      // Apply cropping
       const croppedSrc = await applyManualCrop(cropImageSrc, points);
-      // Preprocess the cropped image (ensures high quality)
       const preprocessedSrc = await preprocessImage(croppedSrc);
-      
-      // Set the image state: both preview and enhanced should show the cropped image initially
       setImage({
         raw: cropImageSrc,
         preprocessed: preprocessedSrc,
-        preview: croppedSrc, // Use the cropped image for the original preview
-        enhanced: croppedSrc, // Use the cropped image for the enhanced section initially
+        preview: croppedSrc,
+        enhanced: croppedSrc,
         fullEnhanced: croppedSrc,
       });
-
       setShowCropModal(false);
       setCropImageSrc(null);
       setPoints([]);
-      //setRotation(0);
+      setRotation(0);
       setError(null);
     } catch (err) {
       setError('Cropping/Preprocessing failed: ' + (err as Error).message);
@@ -369,13 +361,9 @@ export function DigitalImageEnhancer() {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       src = window.cv.matFromImageData(imageData);
       rgb = new window.cv.Mat();
-
-      // Convert to RGB
       window.cv.cvtColor(src, rgb, window.cv.COLOR_RGBA2RGB || 4);
 
-      // Apply gamma correction and sharpening only for "Auto Enhance"
       if (isInitial) {
-        // Gamma correction for overall quality
         const gamma = 1.2;
         for (let i = 0; i < rgb.rows; i++) {
           for (let j = 0; j < rgb.cols; j++) {
@@ -387,53 +375,44 @@ export function DigitalImageEnhancer() {
         }
       }
 
-      // Apply brightness and contrast
       let contrastFactor = enhancements.contrast / 100;
-      let brightnessOffset = (enhancements.brightness - 100) * 0.5; // Scale brightness for smoother changes
+      let brightnessOffset = (enhancements.brightness - 100) * 0.5;
       if (isInitial) {
-        contrastFactor = 1.4; // Auto contrast
-        brightnessOffset = 20; // Auto brightness
+        contrastFactor = 1.4;
+        brightnessOffset = 20;
       }
-      // Smoother contrast adjustment
       const contrastMidpoint = 128;
       for (let i = 0; i < rgb.rows; i++) {
         for (let j = 0; j < rgb.cols; j++) {
           const pixel = rgb.ucharPtr(i, j);
           for (let c = 0; c < 3; c++) {
-            // Apply contrast around the midpoint (128) for smoother transitions
             let adjusted = (pixel[c] - contrastMidpoint) * contrastFactor + contrastMidpoint + brightnessOffset;
             pixel[c] = Math.min(255, Math.max(0, adjusted));
           }
         }
       }
 
-      // Apply saturation
       hsv = new window.cv.Mat();
       window.cv.cvtColor(rgb, hsv, window.cv.COLOR_RGB2HSV || 40);
       channels = new window.cv.MatVector();
       window.cv.split(hsv, channels);
       const s = channels.get(1);
       let saturationFactor = enhancements.saturation / 100;
-      if (isInitial) {
-        saturationFactor = 1.3; // Auto saturation
-      }
-      // Smoother saturation adjustment
+      if (isInitial) saturationFactor = 1.3;
       for (let i = 0; i < s.rows; i++) {
         for (let j = 0; j < s.cols; j++) {
           const pixel = s.ucharPtr(i, j);
-          // Apply saturation more gradually
           pixel[0] = Math.min(255, Math.max(0, pixel[0] * saturationFactor));
         }
       }
       window.cv.merge(channels, hsv);
       window.cv.cvtColor(hsv, rgb, window.cv.COLOR_HSV2RGB || 41);
 
-      // Apply sharpening only for "Auto Enhance"
       let finalDst = rgb;
       if (isInitial) {
         sharpDst = new window.cv.Mat();
         const kernel = window.cv.Mat.eye(3, 3, window.cv.CV_32F || 5);
-        const sharpnessValue = 2.5; // Reduced sharpness for a more natural look
+        const sharpnessValue = 2.5;
         kernel.data32F.set([-0.5, -0.5, -0.5, -0.5, sharpnessValue, -0.5, -0.5, -0.5, -0.5]);
         window.cv.filter2D(rgb, sharpDst, -1, kernel);
         kernel.delete();
@@ -441,16 +420,20 @@ export function DigitalImageEnhancer() {
       }
 
       window.cv.imshow(canvas, finalDst);
-
       const enhancedBlob = await new Promise<Blob>((resolve) => {
         canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', quality / 100);
       });
 
-      // Calculate file size
       const sizeInKB = enhancedBlob.size / 1024;
       setFileSize(sizeInKB);
 
       const enhancedDataURL = await blobToDataURL(enhancedBlob);
+
+      setImage((prev) => ({
+        ...prev!,
+        enhanced: enhancedDataURL,
+        fullEnhanced: isInitial ? enhancedDataURL : prev?.fullEnhanced || null,
+      }));
 
       src.delete();
       if (rgb !== finalDst) rgb.delete();
@@ -458,12 +441,6 @@ export function DigitalImageEnhancer() {
       if (channels) channels.delete();
       if (sharpDst && sharpDst !== finalDst) sharpDst.delete();
       if (finalDst) finalDst.delete();
-
-      setImage((prev) => ({
-        ...prev!,
-        enhanced: enhancedDataURL,
-        fullEnhanced: isInitial ? enhancedDataURL : prev?.fullEnhanced || null,
-      }));
     } catch (err) {
       setError('Enhancement failed: ' + (err as Error).message);
       throw err;
@@ -479,7 +456,6 @@ export function DigitalImageEnhancer() {
 
   const handleDownload = () => {
     if (!image?.fullEnhanced) return;
-
     const link = document.createElement('a');
     link.href = image.fullEnhanced;
     link.download = `enhanced-image.jpg`;
@@ -493,9 +469,7 @@ export function DigitalImageEnhancer() {
 
   const handleQualityChange = (value: number) => {
     setQuality(value);
-    if (image?.preprocessed) {
-      handleAutoEnhance(image.preprocessed);
-    }
+    if (image?.preprocessed) handleAutoEnhance(image.preprocessed);
   };
 
   const handleReset = () => {
@@ -503,7 +477,7 @@ export function DigitalImageEnhancer() {
     if (image) {
       setImage((prev) => ({
         ...prev!,
-        enhanced: prev!.preview, // Reset to the original cropped image
+        enhanced: prev!.preview,
         fullEnhanced: prev!.preview,
       }));
     }
@@ -542,17 +516,20 @@ export function DigitalImageEnhancer() {
             <h2 className="text-lg font-semibold mb-4">Crop Image</h2>
             <div
               ref={cropContainerRef}
-              className="relative w-full h-full overflow-auto"
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
+              className="relative w-full h-full overflow-auto touch-none select-none"
+              onMouseMove={handleMove}
+              onMouseUp={handleEnd}
+              onMouseLeave={handleEnd}
+              onTouchMove={handleMove}
+              onTouchEnd={handleEnd}
+              onTouchCancel={handleEnd}
             >
               <img
                 ref={imgRef}
                 src={cropImageSrc}
                 alt="Crop"
                 onLoad={handleImageLoad}
-                className="w-auto h-auto"
+                className="w-auto h-auto max-w-full max-h-[70vh]"
               />
               {points.length === 4 && (
                 <>
@@ -571,23 +548,25 @@ export function DigitalImageEnhancer() {
                   {points.map((point, index) => (
                     <div
                       key={index}
-                      className="absolute w-4 h-4 bg-indigo-600 rounded-full cursor-move"
+                      className="absolute w-6 h-6 bg-indigo-600 rounded-full cursor-move touch-none"
                       style={{
                         left: `${point.x}px`,
                         top: `${point.y}px`,
                         transform: 'translate(-50%, -50%)',
                       }}
-                      onMouseDown={(e) => handleMouseDown(e, index)}
+                      onMouseDown={(e) => handleStart(e, index)}
+                      onTouchStart={(e) => handleStart(e, index)}
                     />
                   ))}
                   <div
-                    className="absolute w-4 h-4 bg-green-600 rounded-full cursor-pointer"
+                    className="absolute w-6 h-6 bg-green-600 rounded-full cursor-pointer touch-none flex items-center justify-center"
                     style={{
                       left: `${(points[0].x + points[1].x) / 2}px`,
                       top: `${points[0].y - 30}px`,
                       transform: 'translate(-50%, -50%)',
                     }}
-                    onMouseDown={(e) => handleMouseDown(e, 'rotate')}
+                    onMouseDown={(e) => handleStart(e, 'rotate')}
+                    onTouchStart={(e) => handleStart(e, 'rotate')}
                   >
                     <RotateCw className="w-4 h-4 text-white" />
                   </div>
@@ -600,7 +579,7 @@ export function DigitalImageEnhancer() {
                   setShowCropModal(false);
                   setCropImageSrc(null);
                   setPoints([]);
-                  //setRotation(0);
+                  setRotation(0);
                 }}
                 className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
               >
@@ -609,9 +588,19 @@ export function DigitalImageEnhancer() {
               <button
                 onClick={handleCropComplete}
                 className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center"
+                disabled={loading}
               >
-                <Crop className="w-5 h-5 mr-2" />
-                Apply Crop
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                    Cropping...
+                  </>
+                ) : (
+                  <>
+                    <Crop className="w-5 h-5 mr-2" />
+                    Apply Crop
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -753,3 +742,5 @@ export function DigitalImageEnhancer() {
     </div>
   );
 }
+
+export default DigitalImageEnhancer;
