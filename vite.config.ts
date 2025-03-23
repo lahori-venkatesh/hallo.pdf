@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  root: '.', // Explicitly set root to project directory where index.html resides
   plugins: [
     react(),
     VitePWA({
@@ -17,21 +18,21 @@ export default defineConfig({
             src: '/icons/icon-72x72.png',
             sizes: '72x72',
             type: 'image/png',
-            purpose: 'any'
+            purpose: 'any',
           },
           {
             src: '/icons/icon-192x192.png',
             sizes: '192x192',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any maskable',
           },
           {
             src: '/icons/icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any'
-          }
-        ]
+            purpose: 'any',
+          },
+        ],
       },
       workbox: {
         runtimeCaching: [
@@ -42,12 +43,12 @@ export default defineConfig({
               cacheName: 'opencv-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
               },
               cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
+                statuses: [0, 200],
+              },
+            },
           },
           {
             urlPattern: /^https:\/\/.*\.unsplash\.com\/.*/i,
@@ -56,12 +57,12 @@ export default defineConfig({
               cacheName: 'image-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
               },
               cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
+                statuses: [0, 200],
+              },
+            },
           },
           {
             urlPattern: /^https:\/\/pagead2\.googlesyndication\.com\/.*/i,
@@ -70,9 +71,9 @@ export default defineConfig({
               cacheName: 'adsense-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 // 24 hours
-              }
-            }
+                maxAgeSeconds: 60 * 60 * 24, // 24 hours
+              },
+            },
           },
           {
             urlPattern: /\.(js|css)$/i,
@@ -81,24 +82,25 @@ export default defineConfig({
               cacheName: 'static-resources',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
-              }
-            }
-          }
+                maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+              },
+            },
+          },
         ],
         skipWaiting: true,
         clientsClaim: true,
-        cleanupOutdatedCaches: true
-      }
-    })
+        cleanupOutdatedCaches: true,
+      },
+    }),
   ],
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
   resolve: {
     alias: {
-      path: 'path-browserify'
-    }
+      path: 'path-browserify',
+      '@workers': '/src/workers', // Alias for worker directory (optional)
+    },
   },
   server: {
     headers: {
@@ -109,8 +111,8 @@ export default defineConfig({
       'Permissions-Policy': 'camera=self',
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Resource-Policy': 'same-origin'
-    }
+      'Cross-Origin-Resource-Policy': 'same-origin',
+    },
   },
   build: {
     target: ['es2020'],
@@ -123,17 +125,17 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'pdf-vendor': ['pdf-lib', 'jspdf', 'pdfjs-dist'],
           'image-vendor': ['browser-image-compression'],
-          'ui-vendor': ['lucide-react', '@dnd-kit/core', '@dnd-kit/sortable']
-        }
-      }
+          'ui-vendor': ['lucide-react', '@dnd-kit/core', '@dnd-kit/sortable'],
+        },
+      },
     },
     sourcemap: true,
     minify: 'terser',
     terserOptions: {
       compress: {
         drop_console: true,
-        drop_debugger: true
-      }
-    }
-  }
+        drop_debugger: true,
+      },
+    },
+  },
 });

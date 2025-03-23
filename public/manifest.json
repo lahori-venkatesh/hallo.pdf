@@ -106,18 +106,18 @@
   },
   "ios_splash_screens": [
     {
+      "src": "/splashscreens/apple-splash-750-1334.png",
+      "sizes": "750x1334",
+      "platform": "ios"
+    },
+    {
       "src": "/splashscreens/apple-splash-1125-2436.png",
       "sizes": "1125x2436",
       "platform": "ios"
     },
     {
-      "src": "/splashscreens/apple-splash-1536-2048.png",
-      "sizes": "1536x2048",
-      "platform": "ios"
-    },
-    {
-      "src": "/splashscreens/apple-splash-1668-2388.png",
-      "sizes": "1668x2388",
+      "src": "/splashscreens/apple-splash-828-1792.png",
+      "sizes": "828x1792",
       "platform": "ios"
     },
     {
@@ -125,5 +125,6 @@
       "sizes": "2048x2732",
       "platform": "ios"
     }
-  ]
+ ]
+
 }

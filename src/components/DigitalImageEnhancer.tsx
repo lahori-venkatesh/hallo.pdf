@@ -1,18 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import Webcam from 'react-webcam';
-import {
-  Upload,
-  Download,
-  Loader2,
-  X,
-  Camera,
-  Wand2
-} from 'lucide-react';
-import { setCache, getCache, CACHE_KEYS, CACHE_EXPIRY } from '../utils/cache';
+import { Upload, Download, Loader2, X, Camera, Wand2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { SEOHeaders } from './SEOHeaders';
-import { AdComponent } from './AdComponent';
 
 interface ImageState {
   original: string;
@@ -39,7 +29,7 @@ const defaultEnhancements: Enhancement = {
 const formatOptions = [
   { value: 'jpeg', label: 'JPEG - Best for photos' },
   { value: 'png', label: 'PNG - Best for graphics' },
-  { value: 'webp', label: 'WebP - Modern format, smaller size' }
+  { value: 'webp', label: 'WebP - Modern format, smaller size' },
 ];
 
 declare global {
@@ -49,24 +39,66 @@ declare global {
   }
 }
 
-// Pre-initialize OpenCV
 const initOpenCV = () => {
-  if (window.cv) {
+  console.log('Initializing OpenCV...');
+  if (window.cv && window.isOpenCvReady) {
+    console.log('OpenCV already loaded and initialized.');
     return Promise.resolve();
   }
 
   return new Promise<void>((resolve, reject) => {
-    // Set a timeout for initialization
     const timeoutId = setTimeout(() => {
+      console.error('OpenCV initialization timed out after 30 seconds.');
+      console.log('window.cv:', window.cv, 'isOpenCvReady:', window.isOpenCvReady);
       reject(new Error('OpenCV initialization timeout'));
-    }, 5000);
+    }, 30000); // Increased to 30 seconds
 
-    // Listen for OpenCV ready event
     window.addEventListener('opencv-ready', function onReady() {
+      console.log('OpenCV ready event received.');
       window.removeEventListener('opencv-ready', onReady);
       clearTimeout(timeoutId);
-      resolve();
+      if (window.cv) {
+        console.log('window.cv confirmed available:', window.cv.getBuildInformation?.());
+        resolve();
+      } else {
+        console.error('opencv-ready fired but window.cv is undefined');
+        reject(new Error('OpenCV loaded but window.cv is undefined'));
+      }
     });
+
+    // Fallback: Check periodically
+    const checkInterval = setInterval(() => {
+      if (window.cv && window.isOpenCvReady) {
+        console.log('Fallback: OpenCV detected manually');
+        clearInterval(checkInterval);
+        clearTimeout(timeoutId);
+        resolve();
+      }
+    }, 500);
+  });
+};
+
+const waitForCvReady = () => {
+  return new Promise<void>((resolve) => {
+    if (cvReady) {
+      console.log('cvReady already true, proceeding immediately');
+      resolve();
+    } else {
+      console.log('Waiting for cvReady to become true...');
+      const interval = setInterval(() => {
+        if (cvReady) {
+          clearInterval(interval);
+          console.log('cvReady became true, proceeding');
+          resolve();
+        }
+      }, 500);
+      // Timeout after 60 seconds to prevent infinite wait
+      setTimeout(() => {
+        clearInterval(interval);
+        console.error('waitForCvReady timed out after 60 seconds');
+        resolve(); // Resolve anyway to avoid hanging
+      }, 60000);
+    }
   });
 };
 
@@ -91,11 +123,13 @@ export function DigitalImageEnhancer() {
         if (mounted) {
           setCvReady(true);
           setInitializingCV(false);
+          console.log('OpenCV initialization complete');
         }
       } catch (err) {
         if (mounted) {
           setError('Failed to load image processing library. Please refresh the page.');
           setInitializingCV(false);
+          console.error('OpenCV initialization failed:', err);
         }
       }
     };
@@ -107,6 +141,24 @@ export function DigitalImageEnhancer() {
     };
   }, []);
 
+  const waitForCvReady = () => {
+    return new Promise<void>((resolve) => {
+      if (cvReady) {
+        console.log('cvReady already true, proceeding immediately');
+        resolve();
+      } else {
+        console.log('Waiting for cvReady to become true...');
+        const interval = setInterval(() => {
+          if (cvReady) {
+            clearInterval(interval);
+            console.log('cvReady became true, proceeding');
+            resolve();
+          }
+        }, 500); // Check every 500ms
+      }
+    });
+  };
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (file) {
@@ -115,7 +167,7 @@ export function DigitalImageEnhancer() {
         setImage({
           original: reader.result as string,
           preview: reader.result as string,
-          enhanced: null
+          enhanced: null,
         });
         handleAutoEnhance(reader.result as string);
       };
@@ -127,108 +179,131 @@ export function DigitalImageEnhancer() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.tiff']
+      'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.tiff'],
     },
-    maxFiles: 1
+    maxFiles: 1,
   });
 
   const captureFromCamera = useCallback(() => {
-    if (webcamRef.current) {
-      const imageSrc = webcamRef.current.getScreenshot();
-      if (imageSrc) {
-        setImage({
-          original: imageSrc,
-          preview: imageSrc,
-          enhanced: null
-        });
-        handleAutoEnhance(imageSrc);
-        setShowCamera(false);
-      }
-    }
-  }, []);
-
-  const handleAutoEnhance = async (imageSrc: string) => {
-    if (!cvReady) {
-      setError('Image processing library is loading. Please wait a moment and try again.');
+    if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
+      alert('Camera capture is only available on mobile devices.');
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment';
+    input.style.display = 'none';
 
-    try {
-      const img = new Image();
-      img.src = imageSrc;
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const src = window.cv.matFromImageData(imageData);
-      const dst = new window.cv.Mat();
-
-      // Apply enhancements
-      src.convertTo(dst, -1, enhancements.contrast / 100, enhancements.brightness - 100);
-
-      // Apply saturation
-      if (enhancements.saturation !== 100) {
-        const hsv = new window.cv.Mat();
-        window.cv.cvtColor(dst, hsv, window.cv.COLOR_BGR2HSV);
-        const channels = new window.cv.MatVector();
-        window.cv.split(hsv, channels);
-        channels.get(1).convertTo(channels.get(1), -1, enhancements.saturation / 100, 0);
-        window.cv.merge(channels, hsv);
-        window.cv.cvtColor(hsv, dst, window.cv.COLOR_HSV2BGR);
-        hsv.delete();
-        channels.delete();
+    input.onchange = (event) => {
+      const target = event.target as HTMLInputElement;
+      const file = target.files ? target.files[0] : null;
+      if (file) {
+        const newImage = {
+          id: Math.random().toString(36).substr(2, 9),
+          file,
+          preview: URL.createObjectURL(file),
+        };
+        setImage({
+          original: newImage.preview,
+          preview: newImage.preview,
+          enhanced: null,
+        });
+        handleAutoEnhance(newImage.preview);
+        setShowCamera(false);
       }
+    };
 
-      // Apply sharpening
-      if (enhancements.sharpness > 0) {
-        const kernel = new window.cv.Mat(3, 3, window.cv.CV_32F, [-1, -1, -1, -1, 9, -1, -1, -1, -1]);
-        window.cv.filter2D(dst, dst, -1, kernel, new window.cv.Point(-1, -1), 0, window.cv.BORDER_DEFAULT);
-        kernel.delete();
+    document.body.appendChild(input);
+    input.click();
+    document.body.removeChild(input);
+  }, []);
+
+  const handleAutoEnhance = useCallback(
+    async (imageSrc: string) => {
+      console.log('handleAutoEnhance called with imageSrc:', imageSrc);
+      if (!cvReady) {
+        console.log('OpenCV not ready, waiting for initialization...');
+        setLoading(true);
+        await waitForCvReady();
+        setLoading(false);
+        if (!cvReady) {
+          setError('Image processing library failed to load after waiting. Please refresh.');
+          return;
+        }
       }
-
-      // Apply denoising
-      if (enhancements.denoise > 0) {
-        window.cv.fastNlMeansDenoisingColored(dst, dst);
+  
+      setLoading(true);
+      setError(null);
+      console.log('Starting enhancement process, cvReady:', cvReady);
+  
+      try {
+        console.log('Creating worker...');
+        const worker = new Worker(new URL('../workers/imageProcessor.worker.js', import.meta.url));
+  
+        console.log('Preparing image data...');
+        const img = await createImageBitmap(await (await fetch(imageSrc)).blob());
+        const canvas = new OffscreenCanvas(img.width, img.height);
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  
+        console.log('Posting message to worker...');
+        worker.postMessage(
+          {
+            imageData,
+            enhancements,
+            outputFormat,
+          },
+          [imageData.data.buffer]
+        );
+  
+        const workerTimeout = setTimeout(() => {
+          console.error('Worker timed out after 30 seconds');
+          worker.terminate();
+          setError('Image processing took too long. Please try again.');
+          setLoading(false);
+        }, 30000);
+  
+        worker.onmessage = ({ data }) => {
+          clearTimeout(workerTimeout);
+          if (data.error) {
+            console.error('Worker error:', data.error);
+            setError(data.error);
+          } else {
+            console.log('Enhanced image URL received:', data.result);
+            setImage((prev) => ({
+              ...prev!,
+              enhanced: data.result,
+            }));
+          }
+          worker.terminate();
+          setLoading(false);
+        };
+  
+        worker.onerror = (error) => {
+          clearTimeout(workerTimeout);
+          console.error('Worker error:', error.message);
+          setError('Image processing failed: ' + error.message);
+          worker.terminate();
+          setLoading(false);
+        };
+      } catch (err) {
+        console.error('Error in handleAutoEnhance:', err);
+        setError('Error enhancing image: ' + err.message);
+        setLoading(false);
       }
-
-      // Display result
-      window.cv.imshow(canvas, dst);
-
-      // Cleanup
-      src.delete();
-      dst.delete();
-
-      // Convert to desired format
-      const enhancedImage = canvas.toDataURL(`image/${outputFormat}`);
-      setImage(prev => ({
-        ...prev!,
-        enhanced: enhancedImage
-      }));
-
-    } catch (err) {
-      console.error('Error enhancing image:', err);
-      setError('Error enhancing image. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [cvReady, enhancements, outputFormat]
+  );
 
   const handleEnhancementChange = (key: keyof Enhancement, value: number) => {
-    setEnhancements(prev => ({
+    setEnhancements((prev) => ({
       ...prev,
-      [key]: value
+      [key]: value,
     }));
+
     if (image) {
       handleAutoEnhance(image.original);
     }
@@ -258,6 +333,7 @@ export function DigitalImageEnhancer() {
           <div className="text-center">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mx-auto mb-4" />
             <p className="text-gray-600">Loading image processing library...</p>
+            <p className="text-sm text-gray-500">This may take a few moments. Please wait.</p>
           </div>
         </div>
       </div>
@@ -306,9 +382,7 @@ export function DigitalImageEnhancer() {
                 <p className="text-gray-600">
                   {isDragActive ? 'Drop the image here' : 'Drag & drop an image here, or tap to select'}
                 </p>
-                <p className="text-sm text-gray-500 mt-2">
-                  Supports JPEG, PNG, WebP, TIFF
-                </p>
+                <p className="text-sm text-gray-500 mt-2">Supports JPEG, PNG, WebP, TIFF</p>
               </div>
               <div className="flex justify-center">
                 <button
@@ -350,8 +424,9 @@ export function DigitalImageEnhancer() {
                 <h2 className="text-lg font-semibold text-gray-800">Enhanced Image</h2>
                 <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
                   {loading ? (
-                    <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
                       <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                      <p className="ml-2 text-gray-600">Processing image...</p>
                     </div>
                   ) : image.enhanced ? (
                     <img
@@ -361,7 +436,7 @@ export function DigitalImageEnhancer() {
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-                      Processing image...
+                      No enhanced image available.
                     </div>
                   )}
                 </div>
@@ -453,15 +528,13 @@ export function DigitalImageEnhancer() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Output Format
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Output Format</label>
                     <select
                       value={outputFormat}
                       onChange={(e) => setOutputFormat(e.target.value)}
                       className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                     >
-                      {formatOptions.map(option => (
+                      {formatOptions.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>

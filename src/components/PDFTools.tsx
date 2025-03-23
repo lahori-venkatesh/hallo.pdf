@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { PDFDocument } from 'pdf-lib';
 import { pdfjsLib } from '../utils/pdfjs';
 import JSZip from 'jszip';
-import { Upload, Download, Loader2, X, FileText, FilePlus, Split, Minimize2, Camera, Images } from 'lucide-react';
+import { Upload, Download, Loader2, X, FileText, FilePlus, Split,  Camera, Images } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import {
@@ -84,8 +84,8 @@ function SortableImage({ id, preview, onRemove }: SortableImageProps) {
   return (
     <div
       ref={setNodeRef}
-      style={style}
-      className="relative aspect-[3/4] bg-white rounded-lg shadow-md cursor-move"
+      className="relative aspect-[3/4] bg-white rounded-lg shadow-md cursor-move touch-pan-x touch-pan-y"
+      style={{ ...style, touchAction: 'none' }}
       {...attributes}
       {...listeners}
     >
@@ -113,13 +113,13 @@ const tabs = [
   { id: 'create', label: 'Create PDF', icon: FileText },
   { id: 'merge', label: 'Merge PDFs', icon: FilePlus },
   { id: 'split', label: 'Split PDF', icon: Split },
-  { id: 'compress', label: 'Compress', icon: Minimize2 },
+  //{ id: 'compress', label: 'Compress', icon: Minimize2 },
   { id: 'to-images', label: 'PDF to Images', icon: Images },
 ];
 
 export function PDFTools() {
-  const { saveOperation, getRecentOperations } = useOperationsCache();
-  const [recentOperations, setRecentOperations] = useState<CachedOperation[]>([]);
+  const { saveOperation, } = useOperationsCache();
+  const [recentOperations ] = useState<CachedOperation[]>([]);
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'create');
   const [files, setFiles] = useState<PDFFile[]>([]);
@@ -138,7 +138,16 @@ export function PDFTools() {
   const webcamRef = useRef<Webcam | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 1,
+        delay: 100,
+        tolerance: {
+          x: 10,
+          y: 10
+        }
+      }
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -192,24 +201,37 @@ export function PDFTools() {
   });
 
   const captureFromCamera = useCallback(() => {
-    if (webcamRef.current) {
-      const imageSrc = webcamRef.current.getScreenshot();
-      if (imageSrc) {
-        fetch(imageSrc)
-          .then(res => res.blob())
-          .then(blob => {
-            const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
-            const newImage = {
-              id: Math.random().toString(36).substr(2, 9),
-              file,
-              preview: createSecureObjectURL(blob)
-            };
-            setImages(prev => [...prev, newImage].slice(0, 30));
-            setShowCamera(false);
-          });
-      }
+    if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
+      alert("Camera capture is only available on mobile devices.");
+      return;
     }
-  }, [webcamRef]);
+  
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.capture = "environment"; // Forces mobile back camera
+    input.style.display = "none";
+  
+    input.onchange = (event) => {
+      const target = event.target as HTMLInputElement; // Cast to HTMLInputElement
+      const file = target.files ? target.files[0] : null; // Check if files exist
+      if (file) {
+        const newImage = {
+          id: Math.random().toString(36).substr(2, 9),
+          file,
+          preview: URL.createObjectURL(file), // Create preview URL
+        };
+        setImages(prev => [...prev, newImage].slice(0, 30));
+        setShowCamera(false);
+      }
+    };
+  
+    document.body.appendChild(input);
+    input.click();
+    document.body.removeChild(input); // Clean up
+  }, []);
+  
+  
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -404,7 +426,7 @@ export function PDFTools() {
     }
   };
 
-  const handleCompressPDF = async () => {
+  /*const handleCompressPDF = async () => {
     if (files.length !== 1) {
       setError('Please select one PDF file');
       return;
@@ -485,7 +507,7 @@ export function PDFTools() {
     } finally {
       setLoading(false);
     }
-  };
+  };*/
 const handlePDFToImages = async () => {
   if (files.length !== 1) {
     setError('Please select one PDF file');
@@ -595,9 +617,9 @@ const handleProcess = () => {
     case 'split':
       handleSplitPDF();
       break;
-    case 'compress':
-      handleCompressPDF();
-      break;
+    //case 'compress':
+      //handleCompressPDF();
+      //break;
     case 'to-images':
       handlePDFToImages();
       break;
@@ -621,7 +643,7 @@ const handleDownload = async () => {
 
 const resetFiles = () => {
   images.forEach(image => revokeBlobUrl(image.preview));
-  files.forEach(file => revokeBlobUrl(file.preview));
+  files.forEach(file => file.preview && revokeBlobUrl(file.preview));
   if (result) revokeBlobUrl(result);
   
   setFiles([]);

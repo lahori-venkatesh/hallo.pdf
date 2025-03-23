@@ -5,24 +5,38 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
-    <!-- Preload OpenCV for faster loading -->
-    <link rel="preload" href="https://docs.opencv.org/4.8.0/opencv.js" as="script">
-    
-    <!-- Initialize OpenCV -->
+
+    <!-- Preload OpenCV.js for faster loading -->
+    <link rel="preload" href="https://docs.opencv.org/4.5.5/opencv.js" as="script" />
+
+    <!-- Initialize OpenCV (moved before the OpenCV.js script) -->
     <script>
+      console.log('Setting up OpenCV Module...');
       window.Module = {
         onRuntimeInitialized: function() {
+          console.log('OpenCV runtime initialized');
           window.isOpenCvReady = true;
           window.dispatchEvent(new Event('opencv-ready'));
         }
       };
+      // Fallback: Force event if cv is available after delay
+      setTimeout(() => {
+        if (typeof cv !== 'undefined' && !window.isOpenCvReady) {
+          console.log('Fallback: Forcing opencv-ready');
+          window.isOpenCvReady = true;
+          window.dispatchEvent(new Event('opencv-ready'));
+        } else if (typeof cv === 'undefined') {
+          console.error('OpenCV.js failed to load cv after 25 seconds');
+        }
+      }, 25000);
     </script>
-    <script async src="https://docs.opencv.org/4.8.0/opencv.js"></script>
-    
+    <!-- Load OpenCV.js asynchronously -->
+    <script async src="https://docs.opencv.org/4.5.5/opencv.js" type="text/javascript"></script>
+
     <title>Hallopdf - Document & Image Conversion Tools</title>
     <meta name="description" content="Transform your documents and images with Bropdf's powerful conversion tools. Convert, compress, and enhance your files with ease." />
     <meta name="keywords" content="document conversion, image tools, PDF converter, OCR, image compression" />
-    
+
     <!-- Security Headers -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
@@ -44,7 +58,7 @@
     <meta http-equiv="X-XSS-Protection" content="1; mode=block">
     <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
     <meta http-equiv="Permissions-Policy" content="camera=self">
-    
+
     <!-- Performance Optimization -->
     <link rel="preconnect" href="https://docs.opencv.org">
     <link rel="preconnect" href="https://kzfivmcaxgwleqqkvrzr.supabase.co">
@@ -55,9 +69,7 @@
     <link rel="apple-touch-startup-image" href="/splashscreens/apple-splash-750-1334.png" media="(device-width: 375px)">
     <link rel="apple-touch-startup-image" href="/splashscreens/apple-splash-1125-2436.png" media="(device-width: 375px)">
     <link rel="apple-touch-startup-image" href="/splashscreens/apple-splash-828-1792.png" media="(device-width: 375px)">
-   <link rel="apple-touch-startup-image" href="/splashscreens/apple-splash-2048-2732.png" media="(device-width: 768px)">
-
-
+    <link rel="apple-touch-startup-image" href="/splashscreens/apple-splash-2048-2732.png" media="(device-width: 768px)">
   </head>
   <body>
     <div id="root"></div>
