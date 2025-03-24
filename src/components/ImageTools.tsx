@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import imageCompression from 'browser-image-compression';
 import { Upload, Download, Image as ImageIcon, Loader2, X, Camera, FileText, Settings2, Crop, RotateCw } from 'lucide-react';
-import { jsPDF } from 'jspdf';
+import Webcam from 'react-webcam';
 import { useOperationsCache } from '../utils/operationsCache';
 import { SEOHeaders } from './SEOHeaders';
 import { AdComponent } from './AdComponent';
@@ -38,6 +37,7 @@ export function ImageTools() {
   const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCamera, setShowCamera] = useState(false); // New state for camera preview
   const [showCropModal, setShowCropModal] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [points, setPoints] = useState<Point[]>([]);
@@ -45,7 +45,7 @@ export function ImageTools() {
   const [dragState, setDragState] = useState<{ index: number | 'rotate' | null; type: 'move' | 'rotate' | null }>({ index: null, type: null });
   const imgRef = useRef<HTMLImageElement>(null);
   const cropContainerRef = useRef<HTMLDivElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const webcamRef = useRef<Webcam>(null); // Ref for webcam
   const [settings, setSettings] = useState<ConversionSettings>({
     mode: 'quality', targetSize: null, quality: 80, format: 'jpeg', width: null, height: null, maintainAspectRatio: true
   });
@@ -88,22 +88,30 @@ export function ImageTools() {
     maxFiles: 1
   });
 
-  const handleCameraCapture = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
-      setError('Invalid file type from camera');
-      return;
-    }
-    const previewUrl = createSecureObjectURL(file);
-    setCropImageSrc(previewUrl);
-    setShowCropModal(true);
-    setImage({ file, preview: previewUrl });
-    setConvertedImage(null);
-    setConvertedBlob(null);
-    setError(null);
-    // Reset the input value to allow re-capturing
-    if (cameraInputRef.current) {
-      cameraInputRef.current.value = '';
+  const handleCameraCapture = useCallback(() => {
+    if (webcamRef.current) {
+      const imageSrc = webcamRef.current.getScreenshot();
+      if (!imageSrc) {
+        setError('Failed to capture image. Please try again.');
+        return;
+      }
+      fetch(imageSrc)
+        .then(res => res.blob())
+        .then(blob => {
+          const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
+          const previewUrl = createSecureObjectURL(file);
+          setCropImageSrc(previewUrl);
+          setShowCropModal(true);
+          setImage({ file, preview: previewUrl });
+          setShowCamera(false);
+          setConvertedImage(null);
+          setConvertedBlob(null);
+          setError(null);
+        })
+        .catch(err => {
+          console.error('Error capturing image from camera:', err);
+          setError('Failed to capture image from camera.');
+        });
     }
   }, []);
 
@@ -231,7 +239,16 @@ export function ImageTools() {
     setLoading(true);
     try {
       const isPDF = settings.format === 'pdf';
-      const resultBlob = isPDF ? await createPDF(image.preview, settings) : await compressImage(image.file, settings);
+      let resultBlob: Blob;
+
+      if (isPDF) {
+        const { jsPDF } = await import('jspdf');
+        resultBlob = await createPDF(image.preview, settings, jsPDF);
+      } else {
+        const imageCompression = (await import('browser-image-compression')).default;
+        resultBlob = await compressImage(image.file, settings, imageCompression);
+      }
+
       revokeBlobUrl(convertedImage);
       const resultUrl = createSecureObjectURL(resultBlob);
       saveOperation({
@@ -248,7 +265,7 @@ export function ImageTools() {
     }
   }, [image, settings, convertedImage, saveOperation]);
 
-  const createPDF = async (preview: string, settings: ConversionSettings): Promise<Blob> => {
+  const createPDF = async (preview: string, settings: ConversionSettings, jsPDF: any): Promise<Blob> => {
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'px' });
     const img = new Image();
     await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = preview; });
@@ -268,7 +285,7 @@ export function ImageTools() {
     return pdf.output('blob');
   };
 
-  const compressImage = (file: File, settings: ConversionSettings): Promise<Blob> =>
+  const compressImage = (file: File, settings: ConversionSettings, imageCompression: any): Promise<Blob> =>
     imageCompression(file, {
       maxSizeMB: settings.mode === 'size' ? settings.targetSize || 1 : undefined,
       maxWidthOrHeight: Math.max(settings.width || 0, settings.height || 0) || undefined,
@@ -292,6 +309,7 @@ export function ImageTools() {
     setConvertedImage(null);
     setConvertedBlob(null);
     setError(null);
+    setShowCamera(false);
     setShowCropModal(false);
     setCropImageSrc(null);
     setPoints([]);
@@ -306,11 +324,9 @@ export function ImageTools() {
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
   }, []);
 
-  const triggerCamera = useCallback(() => {
-    if (cameraInputRef.current) {
-      cameraInputRef.current.click();
-    }
-  }, []);
+  const videoConstraints = {
+    facingMode: { ideal: 'environment' }, // Prefer back camera
+  };
 
   return (
     <>
@@ -319,7 +335,34 @@ export function ImageTools() {
         <h1 className="text-2xl font-bold text-gray-900 mb-6 text-center">Image Tools</h1>
         <AdComponent slot="image-tools-top" className="mb-6" style={{ minHeight: '90px' }} />
         <div className="bg-white rounded-xl shadow-lg p-4">
-          {showCropModal && cropImageSrc ? (
+          {showCamera ? (
+            <div className="space-y-4">
+              <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                <Webcam
+                  ref={webcamRef}
+                  audio={false}
+                  screenshotFormat="image/jpeg"
+                  videoConstraints={videoConstraints}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex justify-center gap-2">
+                <button
+                  onClick={handleCameraCapture}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
+                >
+                  <Camera className="w-5 h-5 mr-2" />
+                  Capture
+                </button>
+                <button
+                  onClick={() => setShowCamera(false)}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : showCropModal && cropImageSrc ? (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-800">Crop Image</h3>
               <div
@@ -405,19 +448,11 @@ export function ImageTools() {
                 <p className="text-sm text-gray-500 mt-2">JPEG, PNG, WebP, GIF, SVG</p>
               </div>
               <button 
-                onClick={triggerCamera} 
+                onClick={() => setShowCamera(true)} 
                 className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center mx-auto"
               >
                 <Camera className="w-5 h-5 mr-2" />Capture Document
               </button>
-              <input
-                type="file"
-                ref={cameraInputRef}
-                accept="image/*"
-                capture="environment"
-                onChange={handleCameraCapture}
-                className="hidden"
-              />
             </div>
           ) : (
             <div className="space-y-6">
