@@ -85,39 +85,62 @@ export function ImageTools() {
     maxFiles: 1
   });
 
-  const captureFromCamera = useCallback(() => {
+  const captureFromCamera = useCallback(async () => {
     if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
       alert("Camera capture is only available on mobile devices.");
       return;
     }
 
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.capture = "environment"; // Forces mobile back camera
-    input.style.display = "none";
-
-    input.onchange = (event) => {
-      const target = event.target as HTMLInputElement;
-      const file = target.files ? target.files[0] : null;
-      if (file) {
-        if (!validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
-          setError('Invalid file type from camera');
-          return;
-        }
-        const previewUrl = createSecureObjectURL(file);
-        setCropImageSrc(previewUrl);
-        setShowCropModal(true);
-        setImage({ file, preview: previewUrl });
-        setConvertedImage(null);
-        setConvertedBlob(null);
-        setError(null);
+    try {
+      // Check if the browser supports mediaDevices and getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setError('Camera access is not supported on this browser.');
+        return;
       }
-    };
 
-    document.body.appendChild(input);
-    input.click();
-    document.body.removeChild(input); // Clean up
+      // Request camera permission and access the back camera
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment', // Use the back camera
+        },
+      });
+
+      // Stop the stream since we only need to check permission
+      stream.getTracks().forEach(track => track.stop());
+
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.capture = "environment"; // Forces mobile back camera (for compatibility)
+      input.style.display = "none";
+
+      input.onchange = (event) => {
+        const target = event.target as HTMLInputElement;
+        const file = target.files ? target.files[0] : null;
+        if (file) {
+          if (!validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
+            setError('Invalid file type from camera');
+            return;
+          }
+          const previewUrl = createSecureObjectURL(file);
+          setCropImageSrc(previewUrl);
+          setShowCropModal(true);
+          setImage({ file, preview: previewUrl });
+          setConvertedImage(null);
+          setConvertedBlob(null);
+          setError(null);
+        } else {
+          setError('No image was captured.');
+        }
+      };
+
+      document.body.appendChild(input);
+      input.click();
+      document.body.removeChild(input); // Clean up
+    } catch (err) {
+      console.error('Camera access error:', err);
+      setError('Failed to access the camera. Please ensure camera permissions are granted.');
+    }
   }, []);
 
   const handleImageLoad = useCallback(() => {

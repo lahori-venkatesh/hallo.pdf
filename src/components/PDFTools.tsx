@@ -36,7 +36,6 @@ import {
   revokeBlobUrl
 } from '../utils/security';
 
-
 interface PDFFile {
   file: File;
   preview?: string;
@@ -75,7 +74,7 @@ function SortableImage({ id, preview, onRemove, index }: SortableImageProps) {
     transition,
     zIndex: isDragging ? 10 : 0,
     opacity: isDragging ? 0.7 : 1,
-    scale: isDragging ? 1.1 : 1, // Increased scale for better visibility
+    scale: isDragging ? 1.1 : 1,
   };
 
   const handleRemoveClick = (e: React.MouseEvent | React.TouchEvent) => {
@@ -90,8 +89,6 @@ function SortableImage({ id, preview, onRemove, index }: SortableImageProps) {
       className="relative aspect-[3/4] bg-white rounded-lg shadow-md flex items-center justify-center"
       style={style}
       {...attributes}
-      // Temporarily allow dragging the entire image to test
-      // {...listeners}
     >
       <img
         src={preview}
@@ -107,11 +104,11 @@ function SortableImage({ id, preview, onRemove, index }: SortableImageProps) {
         Failed to load image
       </div>
       <button
-        className="absolute left-2 top-2 bg-gray-200 rounded-full p-4 cursor-move z-20 pointer-events-auto hover:bg-gray-300 transition-colors touch-none" // Increased padding and added touch-none
+        className="absolute left-1 top-1 bg-white rounded-full p-2 cursor-move z-20 pointer-events-auto hover:bg-gray-300 transition-colors touch-none"
         {...listeners}
         aria-label={`Drag to reorder image ${index + 1}`}
       >
-        <GripVertical className="w-4 h-4 text-gray-700" /> {/* Final icon size */}
+        <GripVertical className="w-5 h-5 text-indigo-700" />
       </button>
       <button
         onClick={handleRemoveClick}
@@ -152,11 +149,23 @@ export function PDFTools() {
     compressed: null
   });
 
+  // New state for Create PDF quality level and file sizes
+  const [createQualityLevel, setCreateQualityLevel] = useState<number>(80); // Quality level for Create PDF (0-100)
+  const [createFileSizes, setCreateFileSizes] = useState<{
+    original: number | null;
+    estimated: number | null;
+    final: number | null;
+  }>({
+    original: null, // Sum of input image sizes
+    estimated: null, // Estimated PDF size based on quality level
+    final: null, // Actual PDF size after creation
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        delay: 0, // Removed delay for immediate drag
-        distance: 0, // Removed distance requirement
+        delay: 0,
+        distance: 0,
       },
       onActivation: ({ event }) => {
         console.log('PointerSensor activated:', event);
@@ -164,8 +173,8 @@ export function PDFTools() {
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 0, // Removed delay for immediate drag
-        tolerance: 10, // Increased tolerance to allow more movement
+        delay: 0,
+        tolerance: 10,
       },
       onActivation: ({ event }) => {
         console.log('TouchSensor activated:', event);
@@ -211,6 +220,17 @@ export function PDFTools() {
       setImages(prev => {
         const updatedImages = [...prev, ...newImages].slice(0, 30);
         console.log('Updated images:', updatedImages);
+
+        // Calculate total original size of images
+        const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0);
+        // Estimate PDF size based on quality level (simplified estimation)
+        const estimatedSize = totalOriginalSize * (createQualityLevel / 100);
+        setCreateFileSizes({
+          original: totalOriginalSize,
+          estimated: estimatedSize,
+          final: null,
+        });
+
         return updatedImages;
       });
     } else {
@@ -230,7 +250,7 @@ export function PDFTools() {
     setResult(null);
     setResultBlob(null);
     if (validFiles.length > 0) setError(null);
-  }, [activeTab]);
+  }, [activeTab, createQualityLevel]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -241,53 +261,84 @@ export function PDFTools() {
     maxFiles: activeTab === 'create' ? 30 : undefined
   });
 
-  const captureFromCamera = useCallback(() => {
+  const captureFromCamera = useCallback(async () => {
     if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
       alert("Camera capture is only available on mobile devices.");
       return;
     }
 
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.capture = "environment";
-    input.style.display = "none";
-
-    input.onchange = (event) => {
-      const target = event.target as HTMLInputElement;
-      const file = target.files ? target.files[0] : null;
-      if (file) {
-        const validation = validateFile(file, ALLOWED_IMAGE_TYPES);
-        if (!validation.isValid) {
-          setError(validation.error || 'Invalid file type from camera');
-          return;
-        }
-
-        try {
-          const preview = createSecureObjectURL(file);
-          const newImage = {
-            id: `${file.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            file,
-            preview,
-          };
-          setImages(prev => {
-            const updatedImages = [...prev, newImage].slice(0, 30);
-            console.log('Updated images from camera:', updatedImages);
-            return updatedImages;
-          });
-          setError(null);
-        } catch (err) {
-          setError(`Failed to create preview for captured image: ${(err as Error).message}`);
-        }
-      } else {
-        setError('No image was captured.');
+    try {
+      // Check if the browser supports mediaDevices and getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setError('Camera access is not supported on this browser.');
+        return;
       }
-    };
 
-    document.body.appendChild(input);
-    input.click();
-    document.body.removeChild(input);
-  }, []);
+      // Request camera permission and access the back camera
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment', // Use the back camera
+        },
+      });
+
+      // Stop the stream since we only need to check permission
+      stream.getTracks().forEach(track => track.stop());
+
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.capture = "environment"; // Use the back camera
+      input.style.display = "none";
+
+      input.onchange = (event) => {
+        const target = event.target as HTMLInputElement;
+        const file = target.files ? target.files[0] : null;
+        if (file) {
+          const validation = validateFile(file, ALLOWED_IMAGE_TYPES);
+          if (!validation.isValid) {
+            setError(validation.error || 'Invalid file type from camera');
+            return;
+          }
+
+          try {
+            const preview = createSecureObjectURL(file);
+            const newImage = {
+              id: `${file.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              file,
+              preview,
+            };
+            setImages(prev => {
+              const updatedImages = [...prev, newImage].slice(0, 30);
+              console.log('Updated images from camera:', updatedImages);
+
+              // Update file sizes after adding camera image
+              const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0);
+              const estimatedSize = totalOriginalSize * (createQualityLevel / 100);
+              setCreateFileSizes({
+                original: totalOriginalSize,
+                estimated: estimatedSize,
+                final: null,
+              });
+
+              return updatedImages;
+            });
+            setError(null);
+          } catch (err) {
+            setError(`Failed to create preview for captured image: ${(err as Error).message}`);
+          }
+        } else {
+          setError('No image was captured.');
+        }
+      };
+
+      document.body.appendChild(input);
+      input.click();
+      document.body.removeChild(input);
+    } catch (err) {
+      console.error('Camera access error:', err);
+      setError('Failed to access the camera. Please ensure camera permissions are granted.');
+    }
+  }, [createQualityLevel]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     console.log('Drag started:', event);
@@ -329,9 +380,20 @@ export function PDFTools() {
       if (imageToRemove) {
         revokeBlobUrl(imageToRemove.preview);
       }
-      return prev.filter(img => img.id !== id);
+      const updatedImages = prev.filter(img => img.id !== id);
+
+      // Update file sizes after removing an image
+      const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0, 0);
+      const estimatedSize = totalOriginalSize * (createQualityLevel / 100);
+      setCreateFileSizes({
+        original: totalOriginalSize,
+        estimated: estimatedSize,
+        final: null,
+      });
+
+      return updatedImages;
     });
-  }, []);
+  }, [createQualityLevel]);
 
   const handleCreatePDF = async () => {
     if (images.length === 0) {
@@ -346,13 +408,34 @@ export function PDFTools() {
       const pdfDoc = await PDFDocument.create();
 
       for (const image of images) {
+        // Convert image to a format we can manipulate (e.g., using canvas to apply quality)
         const imageBytes = await image.file.arrayBuffer();
-        let pdfImage;
+        const img = new Image();
+        img.src = URL.createObjectURL(new Blob([imageBytes], { type: image.file.type }));
 
+        await new Promise((resolve) => {
+          img.onload = resolve;
+        });
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Failed to get canvas context');
+
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+
+        // Convert canvas to JPEG with the specified quality
+        const quality = createQualityLevel / 100; // Convert to 0-1 range
+        const compressedImageData = canvas.toDataURL('image/jpeg', quality);
+        const compressedImageBytes = await fetch(compressedImageData).then(res => res.blob()).then(blob => blob.arrayBuffer());
+
+        let pdfImage;
         if (image.file.type.includes('png')) {
-          pdfImage = await pdfDoc.embedPng(imageBytes);
+          // Since we're converting to JPEG, we use embedJpg
+          pdfImage = await pdfDoc.embedJpg(compressedImageBytes);
         } else {
-          pdfImage = await pdfDoc.embedJpg(imageBytes);
+          pdfImage = await pdfDoc.embedJpg(compressedImageBytes);
         }
 
         const page = pdfDoc.addPage();
@@ -373,6 +456,9 @@ export function PDFTools() {
           width: drawWidth,
           height: drawHeight,
         });
+
+        // Clean up
+        URL.revokeObjectURL(img.src);
       }
 
       const pdfBytes = await pdfDoc.save();
@@ -383,12 +469,18 @@ export function PDFTools() {
       setResult(newResult);
       setResultBlob(blob);
 
+      // Update final file size
+      setCreateFileSizes(prev => ({
+        ...prev,
+        final: pdfBytes.length,
+      }));
+
       saveOperation({
         type: 'create_pdf',
         metadata: {
           filename: 'document.pdf',
           fileSize: pdfBytes.length,
-          settings: { imageCount: images.length }
+          settings: { imageCount: images.length, qualityLevel: createQualityLevel }
         },
         preview: createSecureObjectURL(blob)
       });
@@ -633,6 +725,7 @@ export function PDFTools() {
     setResultBlob(null);
     setError(null);
     setPreviewSize({ original: null, compressed: null });
+    setCreateFileSizes({ original: null, estimated: null, final: null });
   }, [images, files, result]);
 
   const formatFileSize = (bytes: number | null) => {
@@ -650,10 +743,27 @@ export function PDFTools() {
     return Math.round(reduction);
   };
 
+  const calculateCreateReduction = () => {
+    if (!createFileSizes.original || !createFileSizes.final) return null;
+    const reduction = ((createFileSizes.original - createFileSizes.final) / createFileSizes.original) * 100;
+    return Math.round(reduction);
+  };
+
+  const handleQualityChange = (newQuality: number) => {
+    setCreateQualityLevel(newQuality);
+    // Recalculate estimated size based on new quality level
+    if (createFileSizes.original) {
+      const estimatedSize = createFileSizes.original * (newQuality / 100);
+      setCreateFileSizes(prev => ({
+        ...prev,
+        estimated: estimatedSize,
+      }));
+    }
+  };
+
   const renderImageGrid = () => {
     if (activeTab !== 'create' || images.length === 0) return null;
 
-    // First, test without virtualization
     return (
       <div className="mt-6">
         <div className="flex justify-between items-center mb-4">
@@ -670,7 +780,7 @@ export function PDFTools() {
         </div>
         <DndContext
           sensors={sensors}
-          collisionDetection={rectIntersection} // Changed to rectIntersection for better target detection
+          collisionDetection={rectIntersection}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
@@ -693,7 +803,6 @@ export function PDFTools() {
         </DndContext>
       </div>
     );
-
   };
 
   return (
@@ -779,6 +888,50 @@ export function PDFTools() {
         </div>
 
         {renderImageGrid()}
+
+        {activeTab === 'create' && images.length > 0 && (
+          <div className="mt-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Quality Level: {createQualityLevel}% (Higher quality = Larger file size)
+              </label>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="10"
+                value={createQualityLevel}
+                onChange={(e) => handleQualityChange(Number(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              />
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Original Size (Images):</span>
+                <span className="font-medium">{formatFileSize(createFileSizes.original)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Estimated PDF Size:</span>
+                <span className="font-medium">{formatFileSize(createFileSizes.estimated)}</span>
+              </div>
+              {createFileSizes.final !== null && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Final PDF Size:</span>
+                    <span className="font-medium">{formatFileSize(createFileSizes.final)}</span>
+                  </div>
+                  {calculateCreateReduction() !== null && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Reduction:</span>
+                      <span className="font-medium text-green-600">{calculateCreateReduction()}%</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {activeTab !== 'create' && files.length > 0 && (
           <div className="mt-6">
