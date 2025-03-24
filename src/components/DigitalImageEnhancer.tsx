@@ -1,6 +1,15 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, Download, Loader2, X, Crop, RotateCw, Wand2 } from 'lucide-react';
+
+// Debounce utility function
+const debounce = <F extends (...args: any[]) => void>(func: F, wait: number) => {
+  let timeout: NodeJS.Timeout | null = null;
+  return (...args: Parameters<F>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
 
 interface ImageState {
   raw: string;
@@ -113,7 +122,7 @@ export function DigitalImageEnhancer() {
     }
   }, []);
 
-  const dataURLtoBlob = (dataURL: string): Blob => {
+  const dataURLtoBlob = useCallback((dataURL: string): Blob => {
     const [header, data] = dataURL.split(',');
     const mimeMatch = header.match(/:(.*?);/);
     if (!mimeMatch) throw new Error('Invalid data URL');
@@ -124,18 +133,18 @@ export function DigitalImageEnhancer() {
       array[i] = binary.charCodeAt(i);
     }
     return new Blob([array], { type: mime });
-  };
+  }, []);
 
-  const blobToDataURL = (blob: Blob): Promise<string> => {
+  const blobToDataURL = useCallback((blob: Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
-  };
+  }, []);
 
-  const resizeImage = async (imageSrc: string, maxDimension: number): Promise<string> => {
+  const resizeImage = useCallback(async (imageSrc: string, maxDimension: number): Promise<string> => {
     const image = await createImageBitmap(dataURLtoBlob(imageSrc));
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
@@ -147,9 +156,9 @@ export function DigitalImageEnhancer() {
       canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0);
     });
     return await blobToDataURL(resizedBlob);
-  };
+  }, [dataURLtoBlob, blobToDataURL]);
 
-  const applyManualCrop = async (imageSrc: string, points: Point[]): Promise<string> => {
+  const applyManualCrop = useCallback(async (imageSrc: string, points: Point[]): Promise<string> => {
     const image = await createImageBitmap(dataURLtoBlob(imageSrc));
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
@@ -192,6 +201,11 @@ export function DigitalImageEnhancer() {
     }
 
     if (!hasNonZeroPixels) {
+      src.delete();
+      srcPoints.delete();
+      dstPoints.delete();
+      transform.delete();
+      warped.delete();
       throw new Error('Perspective transform resulted in an empty image');
     }
 
@@ -208,9 +222,9 @@ export function DigitalImageEnhancer() {
     warped.delete();
 
     return croppedDataURL;
-  };
+  }, [dataURLtoBlob, blobToDataURL]);
 
-  const preprocessImage = async (imageSrc: string): Promise<string> => {
+  const preprocessImage = useCallback(async (imageSrc: string): Promise<string> => {
     const image = await createImageBitmap(dataURLtoBlob(imageSrc));
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
@@ -221,23 +235,38 @@ export function DigitalImageEnhancer() {
       canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 1.0);
     });
     return await blobToDataURL(preprocessedBlob);
-  };
+  }, [dataURLtoBlob, blobToDataURL]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        let src = reader.result as string;
-        src = await resizeImage(src, 1000);
-        setCropImageSrc(src);
-        setShowCropModal(true);
-      };
-      reader.readAsDataURL(file);
+      setLoading(true);
+      setError(null);
+      try {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          let src = reader.result as string;
+          // Reduce max dimension to 800 for better performance
+          src = await resizeImage(src, 800);
+          const preprocessedSrc = await preprocessImage(src);
+          setImage({
+            raw: src,
+            preprocessed: preprocessedSrc,
+            preview: src,
+            enhanced: src,
+            fullEnhanced: src,
+          });
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        setError('Failed to load image: ' + (err as Error).message);
+      } finally {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [resizeImage, preprocessImage]);
 
-  const handleImageLoad = () => {
+  const handleImageLoad = useCallback(() => {
     if (imgRef.current && cropContainerRef.current) {
       const { width, height } = imgRef.current;
       const cropWidth = width * 0.8;
@@ -251,9 +280,9 @@ export function DigitalImageEnhancer() {
         { x: cropX, y: cropY + cropHeight },
       ]);
     }
-  };
+  }, []);
 
-  const getPositionFromEvent = (e: React.MouseEvent | React.TouchEvent, rect: DOMRect) => {
+  const getPositionFromEvent = useCallback((e: React.MouseEvent | React.TouchEvent, rect: DOMRect) => {
     const isTouch = 'touches' in e;
     const clientX = isTouch ? e.touches[0].clientX : e.clientX;
     const clientY = isTouch ? e.touches[0].clientY : e.clientY;
@@ -263,18 +292,18 @@ export function DigitalImageEnhancer() {
       x: Math.max(0, Math.min(x, rect.width)), 
       y: Math.max(0, Math.min(y, rect.height)) 
     };
-  };
+  }, []);
 
-  const handleStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>, index: number | 'rotate') => {
+  const handleStart = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>, index: number | 'rotate') => {
     e.preventDefault();
     if (index === 'rotate') {
       setIsRotating(true);
     } else {
       setIsDragging(index);
     }
-  };
+  }, []);
 
-  const handleMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+  const handleMove = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!cropContainerRef.current || (isDragging === null && !isRotating)) return;
     e.preventDefault();
     
@@ -307,15 +336,15 @@ export function DigitalImageEnhancer() {
       newPoints[isDragging] = { x, y };
       setPoints(newPoints);
     }
-  };
+  }, [isDragging, isRotating, points]);
 
-  const handleEnd = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+  const handleEnd = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(null);
     setIsRotating(false);
-  };
+  }, []);
 
-  const handleCropComplete = async () => {
+  const handleCropComplete = useCallback(async () => {
     if (!cropImageSrc || points.length !== 4) return;
     setLoading(true);
     try {
@@ -338,7 +367,7 @@ export function DigitalImageEnhancer() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [cropImageSrc, points, applyManualCrop, preprocessImage]);
 
   const handleAutoEnhance = useCallback(async (imageSrc: string, isInitial: boolean = false) => {
     if (!cvReady || !window.cv) {
@@ -434,45 +463,49 @@ export function DigitalImageEnhancer() {
         enhanced: enhancedDataURL,
         fullEnhanced: isInitial ? enhancedDataURL : prev?.fullEnhanced || null,
       }));
-
-      src.delete();
-      if (rgb !== finalDst) rgb.delete();
-      if (hsv) hsv.delete();
-      if (channels) channels.delete();
-      if (sharpDst && sharpDst !== finalDst) sharpDst.delete();
-      if (finalDst) finalDst.delete();
     } catch (err) {
       setError('Enhancement failed: ' + (err as Error).message);
       throw err;
     } finally {
       setLoading(false);
+      // Ensure all OpenCV matrices are deleted
       if (src && !src.isDeleted()) src.delete();
       if (rgb && !rgb.isDeleted()) rgb.delete();
       if (hsv && !hsv.isDeleted()) hsv.delete();
       if (channels && !channels.isDeleted()) channels.delete();
       if (sharpDst && !sharpDst.isDeleted()) sharpDst.delete();
     }
-  }, [cvReady, enhancements, quality]);
+  }, [cvReady, enhancements, quality, dataURLtoBlob, blobToDataURL]);
 
-  const handleDownload = () => {
+  // Debounced version of handleAutoEnhance
+  const debouncedHandleAutoEnhance = useMemo(
+    () => debounce((imageSrc: string) => handleAutoEnhance(imageSrc), 300),
+    [handleAutoEnhance]
+  );
+
+  const handleDownload = useCallback(() => {
     if (!image?.fullEnhanced) return;
     const link = document.createElement('a');
     link.href = image.fullEnhanced;
     link.download = `enhanced-image.jpg`;
     link.click();
-  };
+  }, [image]);
 
-  const handleEnhancementChange = (key: keyof Enhancement, value: number) => {
+  const handleEnhancementChange = useCallback((key: keyof Enhancement, value: number) => {
     setEnhancements((prev) => ({ ...prev, [key]: value }));
-    if (image && cvReady) handleAutoEnhance(image.preprocessed);
-  };
+    if (image && cvReady) {
+      debouncedHandleAutoEnhance(image.preprocessed);
+    }
+  }, [image, cvReady, debouncedHandleAutoEnhance]);
 
-  const handleQualityChange = (value: number) => {
+  const handleQualityChange = useCallback((value: number) => {
     setQuality(value);
-    if (image?.preprocessed) handleAutoEnhance(image.preprocessed);
-  };
+    if (image?.preprocessed) {
+      debouncedHandleAutoEnhance(image.preprocessed);
+    }
+  }, [image, debouncedHandleAutoEnhance]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setEnhancements(defaultEnhancements);
     if (image) {
       setImage((prev) => ({
@@ -481,7 +514,7 @@ export function DigitalImageEnhancer() {
         fullEnhanced: prev!.preview,
       }));
     }
-  };
+  }, [image]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -489,13 +522,13 @@ export function DigitalImageEnhancer() {
     maxFiles: 1,
   });
 
-  const resetImage = () => {
+  const resetImage = useCallback(() => {
     setImage(null);
     setEnhancements(defaultEnhancements);
     setError(null);
     setLoading(false);
     setFileSize(null);
-  };
+  }, []);
 
   if (!cvReady) {
     return (
@@ -628,13 +661,25 @@ export function DigitalImageEnhancer() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              {image.preview ? (
-                <img src={image.preview} alt="Original" className="aspect-video rounded-lg object-contain" />
-              ) : (
-                <div className="aspect-video bg-gray-100 rounded-lg flex items-center justify-center text-gray-500">
-                  Original image not available.
-                </div>
-              )}
+              <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
+                {image.preview ? (
+                  <img src={image.preview} alt="Original" className="w-full h-full object-contain rounded-lg" />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+                    Original image not available.
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    setCropImageSrc(image.raw);
+                    setShowCropModal(true);
+                  }}
+                  className="absolute bottom-4 right-4 bg-indigo-600 text-white p-2 rounded-full hover:bg-indigo-700 flex items-center shadow-lg"
+                  title="Crop Image"
+                >
+                  <Crop className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           )}
         </div>

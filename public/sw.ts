@@ -11,18 +11,17 @@ const ASSETS = [
   '/vite.svg'
 ];
 
-self.addEventListener('install', (event: Event) => {
-  const e = event as ExtendableEvent;
-  e.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-  );
+// public/sw.js
+self.addEventListener('install', (event) => {
+  console.log('Service Worker installed');
+  event.waitUntil(self.registration.skipWaiting());
 });
 
-self.addEventListener('fetch', (event: Event) => {
-  const e = event as FetchEvent;
-  e.respondWith(
-    caches.match(e.request)
-      .then(response => response || fetch(e.request))
-  );
+self.addEventListener('activate', (event) => {
+  console.log('Service Worker activated');
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
 });
