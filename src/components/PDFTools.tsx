@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { PDFDocument } from 'pdf-lib';
 import { pdfjsLib } from '../utils/pdfjs';
@@ -7,13 +7,14 @@ import { Upload, Download, Loader2, X, FileText, FilePlus, Split, Camera, Images
 import { useSearchParams } from 'react-router-dom';
 import {
   DndContext,
-  closestCenter,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
   useSensor,
   useSensors,
-  DragEndEvent
+  DragEndEvent,
+  DragStartEvent
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -34,6 +35,7 @@ import {
   createSecureDownloadLink,
   revokeBlobUrl
 } from '../utils/security';
+
 
 interface PDFFile {
   file: File;
@@ -71,10 +73,11 @@ function SortableImage({ id, preview, onRemove, index }: SortableImageProps) {
   const style = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     transition,
-    zIndex: isDragging ? 1 : 0,
-    opacity: isDragging ? 0.5 : 1,
-    scale: isDragging ? 1.05 : 1, // Slightly scale up the image while dragging
+    zIndex: isDragging ? 10 : 0,
+    opacity: isDragging ? 0.7 : 1,
+    scale: isDragging ? 1.1 : 1, // Increased scale for better visibility
   };
+
   const handleRemoveClick = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -87,6 +90,8 @@ function SortableImage({ id, preview, onRemove, index }: SortableImageProps) {
       className="relative aspect-[3/4] bg-white rounded-lg shadow-md flex items-center justify-center"
       style={style}
       {...attributes}
+      // Temporarily allow dragging the entire image to test
+      // {...listeners}
     >
       <img
         src={preview}
@@ -102,16 +107,16 @@ function SortableImage({ id, preview, onRemove, index }: SortableImageProps) {
         Failed to load image
       </div>
       <button
-        className="absolute left-2 top-2 bg-gray-200 rounded-full p-2 cursor-move z-10"
+        className="absolute left-2 top-2 bg-gray-200 rounded-full p-4 cursor-move z-20 pointer-events-auto hover:bg-gray-300 transition-colors touch-none" // Increased padding and added touch-none
         {...listeners}
         aria-label={`Drag to reorder image ${index + 1}`}
       >
-        <GripVertical className="w-4 h-4 text-gray-700" />
+        <GripVertical className="w-4 h-4 text-gray-700" /> {/* Final icon size */}
       </button>
       <button
         onClick={handleRemoveClick}
         onTouchEnd={handleRemoveClick}
-        className="absolute top-2 right-2 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors z-10"
+        className="absolute top-2 right-2 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors z-20 pointer-events-auto"
         type="button"
         aria-label={`Remove image ${index + 1}`}
         onPointerDown={(e) => e.stopPropagation()}
@@ -150,14 +155,20 @@ export function PDFTools() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        delay: 100,
-        distance: 5,
+        delay: 0, // Removed delay for immediate drag
+        distance: 0, // Removed distance requirement
+      },
+      onActivation: ({ event }) => {
+        console.log('PointerSensor activated:', event);
       },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 100,
-        tolerance: 5,
+        delay: 0, // Removed delay for immediate drag
+        tolerance: 10, // Increased tolerance to allow more movement
+      },
+      onActivation: ({ event }) => {
+        console.log('TouchSensor activated:', event);
       },
     }),
     useSensor(KeyboardSensor, {
@@ -187,7 +198,7 @@ export function PDFTools() {
         try {
           const preview = createSecureObjectURL(file);
           return {
-            id: Math.random().toString(36).substr(2, 9),
+            id: `${file.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             file,
             preview
           };
@@ -199,7 +210,7 @@ export function PDFTools() {
 
       setImages(prev => {
         const updatedImages = [...prev, ...newImages].slice(0, 30);
-        console.log('Updated images:', updatedImages); // Debug log
+        console.log('Updated images:', updatedImages);
         return updatedImages;
       });
     } else {
@@ -255,13 +266,13 @@ export function PDFTools() {
         try {
           const preview = createSecureObjectURL(file);
           const newImage = {
-            id: Math.random().toString(36).substr(2, 9),
+            id: `${file.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             file,
             preview,
           };
           setImages(prev => {
             const updatedImages = [...prev, newImage].slice(0, 30);
-            console.log('Updated images from camera:', updatedImages); // Debug log
+            console.log('Updated images from camera:', updatedImages);
             return updatedImages;
           });
           setError(null);
@@ -278,15 +289,37 @@ export function PDFTools() {
     document.body.removeChild(input);
   }, []);
 
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    console.log('Drag started:', event);
+  }, []);
+
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
+    console.log('Drag ended:', { active, over });
 
-    if (over && active.id !== over.id) {
+    if (!over) {
+      console.log('No over target found. Reordering aborted.');
+      return;
+    }
+
+    if (active.id !== over.id) {
       setImages((items) => {
+        console.log('Items before reordering:', items);
         const oldIndex = items.findIndex(item => item.id === active.id);
         const newIndex = items.findIndex(item => item.id === over.id);
-        return arrayMove(items, oldIndex, newIndex);
+        console.log('Reordering:', { oldIndex, newIndex, activeId: active.id, overId: over.id });
+
+        if (oldIndex === -1 || newIndex === -1) {
+          console.error('Invalid indices:', { oldIndex, newIndex, activeId: active.id, overId: over.id, items });
+          return items;
+        }
+
+        const newItems = arrayMove(items, oldIndex, newIndex);
+        console.log('New order:', newItems);
+        return newItems;
       });
+    } else {
+      console.log('Active and over IDs are the same. No reordering needed.');
     }
   }, []);
 
@@ -620,7 +653,7 @@ export function PDFTools() {
   const renderImageGrid = () => {
     if (activeTab !== 'create' || images.length === 0) return null;
 
-    // Temporarily disable virtualization for debugging
+    // First, test without virtualization
     return (
       <div className="mt-6">
         <div className="flex justify-between items-center mb-4">
@@ -637,7 +670,8 @@ export function PDFTools() {
         </div>
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={rectIntersection} // Changed to rectIntersection for better target detection
+          onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
           <SortableContext
@@ -660,73 +694,6 @@ export function PDFTools() {
       </div>
     );
 
-    // Re-enable virtualization once the issue is resolved
-    /*
-    const rowHeight = 200;
-    const columns = 4;
-
-    const rowRenderer = ({ index, key, style }: { index: number; key: string; style: React.CSSProperties }) => {
-      const startIndex = index * columns;
-      const endIndex = Math.min(startIndex + columns, images.length);
-      const rowImages = images.slice(startIndex, endIndex);
-
-      return (
-        <div key={key} style={style} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {rowImages.map((image, idx) => (
-            <SortableImage
-              key={image.id}
-              id={image.id}
-              preview={image.preview}
-              onRemove={handleRemoveImage}
-              index={startIndex + idx}
-            />
-          ))}
-        </div>
-      );
-    };
-
-    return (
-      <div className="mt-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-800">
-            Selected Images ({images.length}/30)
-          </h3>
-          <button
-            onClick={resetFiles}
-            className="text-gray-500 hover:text-gray-700"
-            title="Remove all images"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={images.map(img => img.id)}
-            strategy={rectSortingStrategy}
-          >
-            <div className="overflow-y-auto max-h-[60vh]">
-              <AutoSizer>
-                {({ height, width }) => (
-                  <List
-                    height={height}
-                    width={width}
-                    rowCount={Math.ceil(images.length / columns)}
-                    rowHeight={rowHeight}
-                    rowRenderer={rowRenderer}
-                    overscanRowCount={2}
-                  />
-                )}
-              </AutoSizer>
-            </div>
-          </SortableContext>
-        </DndContext>
-      </div>
-    );
-    */
   };
 
   return (
