@@ -19,7 +19,7 @@
     </script>
     <script src="/opencv.js" async onload="console.log('OpenCV.js loaded')"></script>
 
-    <!-- Metadata app will secure -->
+    <!-- Metadata -->
     <title>Hallopdf - Document & Image Conversion Tools</title>
     <meta name="description" content="Transform your documents and images with Bropdf's powerful conversion tools. Convert, compress, and enhance your files with ease." />
     <meta name="keywords" content="document conversion, image tools, PDF converter, OCR, image compression" />
@@ -39,9 +39,6 @@
       form-action 'self';
       upgrade-insecure-requests;
     " />
-    <!-- Removed X-Content-Type-Options and Referrer-Policy from <meta> as they are set via HTTP headers -->
-    <!-- <meta http-equiv="X-Content-Type-Options" content="nosniff" /> -->
-    <!-- <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" /> -->
 
     <!-- Performance Optimization -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
@@ -57,6 +54,7 @@
   </head>
   <body>
     <div id="root"></div>
-    
+    <!-- Add this script tag to specify the entry point -->
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

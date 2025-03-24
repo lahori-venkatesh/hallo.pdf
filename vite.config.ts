@@ -159,7 +159,7 @@ export default defineConfig({
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: false, // Enable console logs for debugging
+        drop_console: false,
         drop_debugger: false,
       },
     },
