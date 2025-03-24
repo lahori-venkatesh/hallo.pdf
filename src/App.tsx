@@ -599,12 +599,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <Router
-      future={{
-        v7_startTransition: true, // Opt into startTransition for smoother transitions
-        v7_relativeSplatPath: true, // Opt into new splat route behavior
-      }}
-    >
+    <Router>
       <AuthProvider>
         <Layout>
           <Routes>
