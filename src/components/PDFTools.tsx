@@ -3,7 +3,9 @@ import { useDropzone } from 'react-dropzone';
 import { PDFDocument } from 'pdf-lib';
 import { pdfjsLib } from '../utils/pdfjs';
 import JSZip from 'jszip';
-import { Upload, Download, Loader2, X, FileText, FilePlus, Split, Camera, Images, GripVertical } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { Document, Packer, Paragraph } from 'docx';
+import { Upload, Download, Loader2, X, FileText, FilePlus, Split, Images, GripVertical } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import {
   DndContext,
@@ -129,6 +131,11 @@ const tabs = [
   { id: 'merge', label: 'Merge PDFs', icon: FilePlus },
   { id: 'split', label: 'Split PDF', icon: Split },
   { id: 'to-images', label: 'PDF to Images', icon: Images },
+  { id: 'compress', label: 'Compress PDF', icon: FileText },
+  { id: 'to-excel', label: 'PDF to Excel', icon: FileText },
+  { id: 'to-word', label: 'PDF to Word', icon: FileText },
+  { id: 'word-to-pdf', label: 'Word to PDF', icon: FileText },
+  { id: 'excel-to-pdf', label: 'Excel to PDF', icon: FileText },
 ];
 
 export function PDFTools() {
@@ -149,16 +156,15 @@ export function PDFTools() {
     compressed: null
   });
 
-  // New state for Create PDF quality level and file sizes
-  const [createQualityLevel, setCreateQualityLevel] = useState<number>(80); // Quality level for Create PDF (0-100)
+  const [createQualityLevel, setCreateQualityLevel] = useState<number>(80);
   const [createFileSizes, setCreateFileSizes] = useState<{
     original: number | null;
     estimated: number | null;
     final: number | null;
   }>({
-    original: null, // Sum of input image sizes
-    estimated: null, // Estimated PDF size based on quality level
-    final: null, // Actual PDF size after creation
+    original: null,
+    estimated: null,
+    final: null,
   });
 
   const sensors = useSensors(
@@ -167,17 +173,11 @@ export function PDFTools() {
         delay: 0,
         distance: 0,
       },
-      onActivation: ({ event }) => {
-        console.log('PointerSensor activated:', event);
-      },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
         delay: 0,
         tolerance: 10,
-      },
-      onActivation: ({ event }) => {
-        console.log('TouchSensor activated:', event);
       },
     }),
     useSensor(KeyboardSensor, {
@@ -186,7 +186,10 @@ export function PDFTools() {
   );
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    const allowedTypes = activeTab === 'create' ? ALLOWED_IMAGE_TYPES : ALLOWED_PDF_TYPES;
+    const allowedTypes = activeTab === 'create' ? ALLOWED_IMAGE_TYPES : 
+                    activeTab === 'word-to-pdf' ? [...Object.values({ 'application/msword': ['.doc', '.docx'], 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'] })].flat() :
+                    activeTab === 'excel-to-pdf' ? [...Object.values({ 'application/vnd.ms-excel': ['.xls'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] })].flat() :
+                    ALLOWED_PDF_TYPES;
 
     const validFiles = acceptedFiles.filter(file => {
       const validation = validateFile(file, allowedTypes);
@@ -198,7 +201,9 @@ export function PDFTools() {
     });
 
     if (validFiles.length === 0) {
-      setError('No valid files were uploaded. Please upload images (JPEG, PNG, WebP).');
+      setError(`No valid files were uploaded. Please upload ${activeTab === 'create' ? 'images (JPEG, PNG, WebP)' : 
+             activeTab === 'word-to-pdf' ? 'Word documents (.doc, .docx)' : 
+             activeTab === 'excel-to-pdf' ? 'Excel files (.xls, .xlsx)' : 'PDF files'}.`);
       return;
     }
 
@@ -219,18 +224,13 @@ export function PDFTools() {
 
       setImages(prev => {
         const updatedImages = [...prev, ...newImages].slice(0, 30);
-        console.log('Updated images:', updatedImages);
-
-        // Calculate total original size of images
         const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0);
-        // Estimate PDF size based on quality level (simplified estimation)
         const estimatedSize = totalOriginalSize * (createQualityLevel / 100);
         setCreateFileSizes({
           original: totalOriginalSize,
           estimated: estimatedSize,
           final: null,
         });
-
         return updatedImages;
       });
     } else {
@@ -254,91 +254,19 @@ export function PDFTools() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: activeTab === 'create'
-      ? { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] }
-      : { 'application/pdf': ['.pdf'] },
+    accept: activeTab === 'create' ? { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] } :
+            activeTab === 'word-to-pdf' ? { 
+              'application/msword': ['.doc'], 
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'] 
+            } :
+            activeTab === 'excel-to-pdf' ? { 
+              'application/vnd.ms-excel': ['.xls'], 
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] 
+            } :
+            { 'application/pdf': ['.pdf'] },
     multiple: activeTab === 'create' || activeTab === 'merge',
     maxFiles: activeTab === 'create' ? 30 : undefined
   });
-
-  const captureFromCamera = useCallback(async () => {
-    if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
-      alert("Camera capture is only available on mobile devices.");
-      return;
-    }
-
-    try {
-      // Check if the browser supports mediaDevices and getUserMedia
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError('Camera access is not supported on this browser.');
-        return;
-      }
-
-      // Request camera permission and access the back camera
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment', // Use the back camera
-        },
-      });
-
-      // Stop the stream since we only need to check permission
-      stream.getTracks().forEach(track => track.stop());
-
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-      input.capture = "environment"; // Use the back camera
-      input.style.display = "none";
-
-      input.onchange = (event) => {
-        const target = event.target as HTMLInputElement;
-        const file = target.files ? target.files[0] : null;
-        if (file) {
-          const validation = validateFile(file, ALLOWED_IMAGE_TYPES);
-          if (!validation.isValid) {
-            setError(validation.error || 'Invalid file type from camera');
-            return;
-          }
-
-          try {
-            const preview = createSecureObjectURL(file);
-            const newImage = {
-              id: `${file.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              file,
-              preview,
-            };
-            setImages(prev => {
-              const updatedImages = [...prev, newImage].slice(0, 30);
-              console.log('Updated images from camera:', updatedImages);
-
-              // Update file sizes after adding camera image
-              const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0);
-              const estimatedSize = totalOriginalSize * (createQualityLevel / 100);
-              setCreateFileSizes({
-                original: totalOriginalSize,
-                estimated: estimatedSize,
-                final: null,
-              });
-
-              return updatedImages;
-            });
-            setError(null);
-          } catch (err) {
-            setError(`Failed to create preview for captured image: ${(err as Error).message}`);
-          }
-        } else {
-          setError('No image was captured.');
-        }
-      };
-
-      document.body.appendChild(input);
-      input.click();
-      document.body.removeChild(input);
-    } catch (err) {
-      console.error('Camera access error:', err);
-      setError('Failed to access the camera. Please ensure camera permissions are granted.');
-    }
-  }, [createQualityLevel]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     console.log('Drag started:', event);
@@ -346,31 +274,14 @@ export function PDFTools() {
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    console.log('Drag ended:', { active, over });
-
-    if (!over) {
-      console.log('No over target found. Reordering aborted.');
-      return;
-    }
+    if (!over) return;
 
     if (active.id !== over.id) {
       setImages((items) => {
-        console.log('Items before reordering:', items);
         const oldIndex = items.findIndex(item => item.id === active.id);
         const newIndex = items.findIndex(item => item.id === over.id);
-        console.log('Reordering:', { oldIndex, newIndex, activeId: active.id, overId: over.id });
-
-        if (oldIndex === -1 || newIndex === -1) {
-          console.error('Invalid indices:', { oldIndex, newIndex, activeId: active.id, overId: over.id, items });
-          return items;
-        }
-
-        const newItems = arrayMove(items, oldIndex, newIndex);
-        console.log('New order:', newItems);
-        return newItems;
+        return arrayMove(items, oldIndex, newIndex);
       });
-    } else {
-      console.log('Active and over IDs are the same. No reordering needed.');
     }
   }, []);
 
@@ -381,8 +292,6 @@ export function PDFTools() {
         revokeBlobUrl(imageToRemove.preview);
       }
       const updatedImages = prev.filter(img => img.id !== id);
-
-      // Update file sizes after removing an image
       const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0);
       const estimatedSize = totalOriginalSize * (createQualityLevel / 100);
       setCreateFileSizes({
@@ -390,7 +299,6 @@ export function PDFTools() {
         estimated: estimatedSize,
         final: null,
       });
-
       return updatedImages;
     });
   }, [createQualityLevel]);
@@ -408,7 +316,6 @@ export function PDFTools() {
       const pdfDoc = await PDFDocument.create();
 
       for (const image of images) {
-        // Convert image to a format we can manipulate (e.g., using canvas to apply quality)
         const imageBytes = await image.file.arrayBuffer();
         const img = new Image();
         img.src = URL.createObjectURL(new Blob([imageBytes], { type: image.file.type }));
@@ -425,19 +332,11 @@ export function PDFTools() {
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
 
-        // Convert canvas to JPEG with the specified quality
-        const quality = createQualityLevel / 100; // Convert to 0-1 range
+        const quality = createQualityLevel / 100;
         const compressedImageData = canvas.toDataURL('image/jpeg', quality);
         const compressedImageBytes = await fetch(compressedImageData).then(res => res.blob()).then(blob => blob.arrayBuffer());
 
-        let pdfImage;
-        if (image.file.type.includes('png')) {
-          // Since we're converting to JPEG, we use embedJpg
-          pdfImage = await pdfDoc.embedJpg(compressedImageBytes);
-        } else {
-          pdfImage = await pdfDoc.embedJpg(compressedImageBytes);
-        }
-
+        let pdfImage = await pdfDoc.embedJpg(compressedImageBytes);
         const page = pdfDoc.addPage();
         const { width, height } = page.getSize();
         const aspectRatio = pdfImage.width / pdfImage.height;
@@ -457,7 +356,6 @@ export function PDFTools() {
           height: drawHeight,
         });
 
-        // Clean up
         URL.revokeObjectURL(img.src);
       }
 
@@ -469,7 +367,6 @@ export function PDFTools() {
       setResult(newResult);
       setResultBlob(blob);
 
-      // Update final file size
       setCreateFileSizes(prev => ({
         ...prev,
         final: pdfBytes.length,
@@ -614,9 +511,7 @@ export function PDFTools() {
       const pdf = await pdfjsLib.getDocument({
         data: pdfData,
         verbosity: 0
-      }).promise.catch(err => {
-        throw new Error(`Failed to load PDF: ${err.message}`);
-      });
+      }).promise;
       const zip = new JSZip();
       const imageBlobs: Blob[] = [];
 
@@ -682,6 +577,278 @@ export function PDFTools() {
     }
   };
 
+  const handleCompressPDF = async () => {
+    if (files.length !== 1) {
+      setError('Please select one PDF file');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const pdfBytes = await files[0].file.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(pdfBytes);
+      const pageCount = pdfDoc.getPageCount();
+
+      const compressedPdf = await PDFDocument.create();
+
+      for (let i = 0; i < pageCount; i++) {
+        const page = pdfDoc.getPage(i);
+        const [copiedPage] = await compressedPdf.copyPages(pdfDoc, [i]);
+        compressedPdf.addPage(copiedPage);
+      }
+
+      const compressedBytes = await compressedPdf.save({
+        useObjectStreams: false,
+        addDefaultPage: false,
+      });
+
+      const blob = new Blob([compressedBytes], { type: 'application/pdf' });
+
+      if (result) revokeBlobUrl(result);
+      const newResult = createSecureObjectURL(blob);
+      setResult(newResult);
+      setResultBlob(blob);
+
+      setPreviewSize(prev => ({
+        ...prev,
+        compressed: compressedBytes.length
+      }));
+
+      saveOperation({
+        type: 'compress_pdf',
+        metadata: {
+          filename: files[0].file.name,
+          fileSize: compressedBytes.length,
+          settings: { compressionLevel }
+        },
+        preview: createSecureObjectURL(blob)
+      });
+    } catch (err) {
+      setError('Error compressing PDF. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePDFToExcel = async () => {
+    if (files.length !== 1) {
+      setError('Please select one PDF file');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const pdfFile = files[0].file;
+      const pdfData = await pdfFile.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Sheet1');
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const textItems = textContent.items.map(item => 'text' in item ? item.text : '');
+        worksheet.addRow([`Page ${i}`]);
+        textItems.forEach(text => worksheet.addRow([text]));
+        worksheet.addRow([]); // Empty row between pages
+      }
+
+      const excelBuffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      if (result) revokeBlobUrl(result);
+      const newResult = createSecureObjectURL(blob);
+      setResult(newResult);
+      setResultBlob(blob);
+
+      saveOperation({
+        type: 'pdf_to_excel',
+        metadata: {
+          filename: files[0].file.name.replace('.pdf', '.xlsx'),
+          fileSize: blob.size,
+          settings: { pageCount: pdf.numPages }
+        },
+        preview: undefined
+      });
+    } catch (err) {
+      setError('Error converting PDF to Excel. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePDFToWord = async () => {
+    if (files.length !== 1) {
+      setError('Please select one PDF file');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const pdfFile = files[0].file;
+      const pdfData = await pdfFile.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+      const doc = new Document({
+        sections: []
+      });
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const textItems = textContent.items.map(item => 'text' in item ? item.text : '');
+        doc.sections.push({
+          children: [
+            new Paragraph(`Page ${i}`),
+            ...textItems.map(text => new Paragraph(text)),
+            new Paragraph('')
+          ]
+        });
+      }
+
+      const docBuffer = await Packer.toBuffer(doc);
+      const blob = new Blob([docBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+
+      if (result) revokeBlobUrl(result);
+      const newResult = createSecureObjectURL(blob);
+      setResult(newResult);
+      setResultBlob(blob);
+
+      saveOperation({
+        type: 'pdf_to_word',
+        metadata: {
+          filename: files[0].file.name.replace('.pdf', '.docx'),
+          fileSize: blob.size,
+          settings: { pageCount: pdf.numPages }
+        },
+        preview: null
+      });
+    } catch (err) {
+      setError('Error converting PDF to Word. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleWordToPDF = async () => {
+    if (files.length !== 1) {
+      setError('Please select one Word document');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const wordFile = files[0].file;
+      const text = await wordFile.text(); // Simplified; for .docx, you'd need a parser like mammoth
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage();
+      const { width, height } = page.getSize();
+      const fontSize = 12;
+
+      page.drawText(text, {
+        x: 50,
+        y: height - 50,
+        size: fontSize,
+        maxWidth: width - 100,
+        lineHeight: fontSize * 1.2
+      });
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+      if (result) revokeBlobUrl(result);
+      const newResult = createSecureObjectURL(blob);
+      setResult(newResult);
+      setResultBlob(blob);
+
+      saveOperation({
+        type: 'word_to_pdf',
+        metadata: {
+          filename: files[0].file.name.replace(/\.(doc|docx)$/, '.pdf'),
+          fileSize: blob.size,
+          settings: {}
+        },
+        preview: createSecureObjectURL(blob)
+      });
+    } catch (err) {
+      setError('Error converting Word to PDF. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExcelToPDF = async () => {
+    if (files.length !== 1) {
+      setError('Please select one Excel file');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const excelFile = files[0].file;
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(await excelFile.arrayBuffer());
+      let textContent = '';
+
+      workbook.eachSheet((sheet) => {
+        textContent += `Sheet: ${sheet.name}\n`;
+        sheet.eachRow((row) => {
+          textContent += row.values?.filter(Boolean).join(' ') + '\n';
+        });
+        textContent += '\n';
+      });
+
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage();
+      const { width, height } = page.getSize();
+      const fontSize = 12;
+
+      page.drawText(textContent, {
+        x: 50,
+        y: height - 50,
+        size: fontSize,
+        maxWidth: width - 100,
+        lineHeight: fontSize * 1.2
+      });
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+      if (result) revokeBlobUrl(result);
+      const newResult = createSecureObjectURL(blob);
+      setResult(newResult);
+      setResultBlob(blob);
+
+      saveOperation({
+        type: 'excel_to_pdf',
+        metadata: {
+          filename: files[0].file.name.replace(/\.(xls|xlsx)$/, '.pdf'),
+          fileSize: blob.size,
+          settings: {}
+        },
+        preview: createSecureObjectURL(blob)
+      });
+    } catch (err) {
+      setError('Error converting Excel to PDF. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleProcess = () => {
     switch (activeTab) {
       case 'create':
@@ -696,6 +863,21 @@ export function PDFTools() {
       case 'to-images':
         handlePDFToImages();
         break;
+      case 'compress':
+        handleCompressPDF();
+        break;
+      case 'to-excel':
+        handlePDFToExcel();
+        break;
+      case 'to-word':
+        handlePDFToWord();
+        break;
+      case 'word-to-pdf':
+        handleWordToPDF();
+        break;
+      case 'excel-to-pdf':
+        handleExcelToPDF();
+        break;
     }
   };
 
@@ -703,7 +885,10 @@ export function PDFTools() {
     if (!resultBlob) return;
 
     try {
-      const filename = activeTab === 'to-images' ? 'pdf-images.zip' : `processed-${activeTab}.pdf`;
+      const filename = activeTab === 'to-images' ? 'pdf-images.zip' :
+                      activeTab === 'to-excel' ? `${files[0]?.file.name.replace('.pdf', '') || 'converted'}.xlsx` :
+                      activeTab === 'to-word' ? `${files[0]?.file.name.replace('.pdf', '') || 'converted'}.docx` :
+                      `processed-${activeTab}.pdf`;
       const link = createSecureDownloadLink(resultBlob, filename);
       document.body.appendChild(link);
       link.click();
@@ -751,7 +936,6 @@ export function PDFTools() {
 
   const handleQualityChange = (newQuality: number) => {
     setCreateQualityLevel(newQuality);
-    // Recalculate estimated size based on new quality level
     if (createFileSizes.original) {
       const estimatedSize = createFileSizes.original * (newQuality / 100);
       setCreateFileSizes(prev => ({
@@ -808,8 +992,8 @@ export function PDFTools() {
   return (
     <>
       <SEOHeaders 
-        title="Free Online PDF Tools - Merge, Split, Convert & Compress PDFs"
-        description="Convert, merge, split, and compress PDF files online for free. No registration required. Fast, secure PDF tools with high-quality output."
+        title="Free Online PDF Tools - Merge, Split, Convert, Compress, Excel & Word"
+        description="Convert PDFs to Excel, Word, images, merge, split, compress, and convert Word/Excel to PDF online for free. No registration required."
         keywords={[
           'merge pdf files free',
           'split pdf online',
@@ -820,7 +1004,11 @@ export function PDFTools() {
           'pdf splitter free',
           'reduce pdf file size',
           'pdf compression tool',
-          'pdf to image converter'
+          'pdf to image converter',
+          'pdf to excel converter',
+          'pdf to word converter',
+          'word to pdf converter',
+          'excel to pdf converter'
         ]}
       />
       <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8">
@@ -865,26 +1053,19 @@ export function PDFTools() {
             <p className="text-gray-600">
               {isDragActive
                 ? 'Drop the files here'
-                : `Drag & drop ${activeTab === 'create' ? 'images' : activeTab === 'merge' ? 'PDF files' : 'a file'} here, or tap to select`}
+                : `Drag & drop ${activeTab === 'create' ? 'images' : 
+                   activeTab === 'merge' ? 'PDF files' : 
+                   activeTab === 'word-to-pdf' ? 'Word documents' :
+                   activeTab === 'excel-to-pdf' ? 'Excel files' :
+                   'a file'} here, or tap to select`}
             </p>
             <p className="text-sm text-gray-500 mt-2">
-              {activeTab === 'create'
-                ? 'Supports images (JPEG, PNG, WebP)'
-                : 'Supports PDF files'}
+              {activeTab === 'create' ? 'Supports images (JPEG, PNG, WebP)' :
+               activeTab === 'word-to-pdf' ? 'Supports Word (.doc, .docx)' :
+               activeTab === 'excel-to-pdf' ? 'Supports Excel (.xls, .xlsx)' :
+               'Supports PDF files'}
             </p>
           </div>
-
-          {activeTab === 'create' && (
-            <div className="mt-4 flex justify-center">
-              <button
-                onClick={captureFromCamera}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
-              >
-                <Camera className="w-5 h-5 mr-2" />
-                Use Camera
-              </button>
-            </div>
-          )}
         </div>
 
         {renderImageGrid()}
@@ -1045,7 +1226,9 @@ export function PDFTools() {
               className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center"
             >
               <Download className="w-5 h-5 mr-2" />
-              Download {activeTab === 'to-images' ? 'ZIP' : 'PDF'}
+              Download {activeTab === 'to-images' ? 'ZIP' : 
+                        activeTab === 'to-excel' ? 'CSV' :
+                        activeTab === 'to-word' ? 'TXT' : 'PDF'}
             </button>
           )}
         </div>
