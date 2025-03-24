@@ -112,7 +112,7 @@ export function DigitalImageEnhancer() {
   const initializedRef = useRef(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const cropContainerRef = useRef<HTMLDivElement | null>(null);
-
+//complete code for digital image enhancer
   useEffect(() => {
     if (!initializedRef.current) {
       initializedRef.current = true;
