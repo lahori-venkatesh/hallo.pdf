@@ -893,16 +893,16 @@ export function PDFTools() {
           <div className="mt-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Quality Level: {createQualityLevel}% (Higher quality = Larger file size)
+                Quality: {createQualityLevel}% (Higher quality = Larger file size)
               </label>
               <input
                 type="range"
-                min="10"
+                min="1"
                 max="100"
-                step="10"
+                step="1"
                 value={createQualityLevel}
                 onChange={(e) => handleQualityChange(Number(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                className="w-full h-2 bg-gray-200 rounded-lg cursor-pointer accent-indigo-600"
               />
             </div>
 

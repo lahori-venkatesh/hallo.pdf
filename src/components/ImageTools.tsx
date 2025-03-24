@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, Download, Image as ImageIcon, Loader2, X, Camera, FileText, Settings2, Crop, RotateCw } from 'lucide-react';
 import { useOperationsCache } from '../utils/operationsCache';
@@ -31,18 +31,22 @@ const sizeOptions = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2];
 
 export function ImageTools() {
   const { saveOperation } = useOperationsCache();
-  const [image, setImage] = useState<PreviewImage | null>(null);
-  const [convertedImage, setConvertedImage] = useState<string | null>(null);
-  const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
+  const [images, setImages] = useState<PreviewImage[]>([]);
+  const [convertedImages, setConvertedImages] = useState<string[]>([]);
+  const [convertedBlobs, setConvertedBlobs] = useState<Blob[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCropModal, setShowCropModal] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropImageIndex, setCropImageIndex] = useState<number | null>(null);
   const [points, setPoints] = useState<Point[]>([]);
   const [rotation, setRotation] = useState(0);
   const [dragState, setDragState] = useState<{ index: number | 'rotate' | null; type: 'move' | 'rotate' | null }>({ index: null, type: null });
+  const [showCameraModal, setShowCameraModal] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const cropContainerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [settings, setSettings] = useState<ConversionSettings>({
     mode: 'quality', targetSize: null, quality: 80, format: 'jpeg', width: null, height: null, maintainAspectRatio: true
   });
@@ -65,83 +69,98 @@ export function ImageTools() {
     }), []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file || !validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
-      setError('Invalid file type');
-      return;
-    }
-    const previewUrl = createSecureObjectURL(file);
-    setCropImageSrc(previewUrl);
-    setShowCropModal(true);
-    setImage({ file, preview: previewUrl });
-    setConvertedImage(null);
-    setConvertedBlob(null);
+    const newImages = acceptedFiles.map(file => {
+      if (!validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
+        setError('Invalid file type');
+        return null;
+      }
+      const previewUrl = createSecureObjectURL(file);
+      return { file, preview: previewUrl };
+    }).filter((img): img is PreviewImage => img !== null);
+
+    setImages(prev => [...prev, ...newImages]);
+    setConvertedImages([]);
+    setConvertedBlobs([]);
     setError(null);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'] },
-    maxFiles: 1
+    maxFiles: 0
   });
 
-  const captureFromCamera = useCallback(async () => {
-    if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
+  const startCamera = useCallback(async () => {
+    const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+    if (!isMobile) {
+      console.log("Not a mobile device, showing alert");
       alert("Camera capture is only available on mobile devices.");
       return;
     }
 
-    try {
-      // Check if the browser supports mediaDevices and getUserMedia
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError('Camera access is not supported on this browser.');
-        return;
-      }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError('Camera access is not supported on this browser.');
+      console.log("Camera access not supported");
+      return;
+    }
 
-      // Request camera permission and access the back camera
+    try {
+      console.log("Requesting camera access...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'environment', // Use the back camera
+          facingMode: 'environment',
         },
       });
 
-      // Stop the stream since we only need to check permission
-      stream.getTracks().forEach(track => track.stop());
-
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-      input.capture = "environment"; // Forces mobile back camera (for compatibility)
-      input.style.display = "none";
-
-      input.onchange = (event) => {
-        const target = event.target as HTMLInputElement;
-        const file = target.files ? target.files[0] : null;
-        if (file) {
-          if (!validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
-            setError('Invalid file type from camera');
-            return;
-          }
-          const previewUrl = createSecureObjectURL(file);
-          setCropImageSrc(previewUrl);
-          setShowCropModal(true);
-          setImage({ file, preview: previewUrl });
-          setConvertedImage(null);
-          setConvertedBlob(null);
-          setError(null);
-        } else {
-          setError('No image was captured.');
-        }
-      };
-
-      document.body.appendChild(input);
-      input.click();
-      document.body.removeChild(input); // Clean up
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+        console.log("Camera stream started");
+        setShowCameraModal(true);
+        setError(null);
+      }
     } catch (err) {
       console.error('Camera access error:', err);
-      setError('Failed to access the camera. Please ensure camera permissions are granted.');
+      setError('Failed to access the camera. Please ensure camera permissions are granted and you are using a secure context (HTTPS).');
     }
   }, []);
+
+  const stopCamera = useCallback(() => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+      console.log("Camera stream stopped");
+    }
+    setShowCameraModal(false);
+  }, []);
+
+  const captureImage = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+    const blob = dataURLtoBlob(dataUrl);
+    const file = new File([blob], `captured-image-${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+    if (!validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
+      setError('Invalid file type from camera');
+      console.log("Invalid file type from camera");
+      return;
+    }
+
+    const previewUrl = createSecureObjectURL(file);
+    setImages(prev => [...prev, { file, preview: previewUrl }]);
+    console.log("Image captured and added:", file.name);
+    stopCamera(); // Close the camera modal after capturing
+  }, [dataURLtoBlob, stopCamera]);
 
   const handleImageLoad = useCallback(() => {
     if (!imgRef.current || !cropContainerRef.current) return;
@@ -237,7 +256,7 @@ export function ImageTools() {
   }, [rotation, blobToDataURL]);
 
   const handleCropComplete = useCallback(async () => {
-    if (!cropImageSrc || points.length !== 4) {
+    if (!cropImageSrc || points.length !== 4 || cropImageIndex === null) {
       setError('Invalid crop selection');
       return;
     }
@@ -245,11 +264,16 @@ export function ImageTools() {
     try {
       const croppedSrc = await applyCrop(cropImageSrc, points);
       const croppedBlob = dataURLtoBlob(croppedSrc);
-      const croppedFile = new File([croppedBlob], image?.file.name || 'cropped.jpg', { type: 'image/jpeg' });
-      revokeBlobUrl(image?.preview ?? null);
-      setImage({ file: croppedFile, preview: croppedSrc });
+      const croppedFile = new File([croppedBlob], images[cropImageIndex]?.file.name || 'cropped.jpg', { type: 'image/jpeg' });
+      revokeBlobUrl(images[cropImageIndex]?.preview ?? null);
+      setImages(prev => {
+        const newImages = [...prev];
+        newImages[cropImageIndex] = { file: croppedFile, preview: croppedSrc };
+        return newImages;
+      });
       setShowCropModal(false);
       setCropImageSrc(null);
+      setCropImageIndex(null);
       setPoints([]);
       setRotation(0);
     } catch (err) {
@@ -257,41 +281,48 @@ export function ImageTools() {
     } finally {
       setLoading(false);
     }
-  }, [cropImageSrc, points, image, applyCrop, dataURLtoBlob]);
+  }, [cropImageSrc, points, cropImageIndex, images, applyCrop, dataURLtoBlob]);
 
   const handleConversion = useCallback(async () => {
-    if (!image) {
-      setError('No image selected');
+    if (images.length === 0) {
+      setError('No images selected');
       return;
     }
     setLoading(true);
     try {
       const isPDF = settings.format === 'pdf';
-      let resultBlob: Blob;
+      const newConvertedImages: string[] = [];
+      const newConvertedBlobs: Blob[] = [];
 
-      if (isPDF) {
-        const { jsPDF } = await import('jspdf');
-        resultBlob = await createPDF(image.preview, settings, jsPDF);
-      } else {
-        const imageCompression = (await import('browser-image-compression')).default;
-        resultBlob = await compressImage(image.file, settings, imageCompression);
+      for (const image of images) {
+        let resultBlob: Blob;
+
+        if (isPDF) {
+          const { jsPDF } = await import('jspdf');
+          resultBlob = await createPDF(image.preview, settings, jsPDF);
+        } else {
+          const imageCompression = (await import('browser-image-compression')).default;
+          resultBlob = await compressImage(image.file, settings, imageCompression);
+        }
+
+        const resultUrl = createSecureObjectURL(resultBlob);
+        saveOperation({
+          type: 'image_conversion',
+          metadata: { filename: image.file.name, fileSize: resultBlob.size, format: settings.format, settings },
+          preview: resultUrl
+        });
+        newConvertedImages.push(resultUrl);
+        newConvertedBlobs.push(resultBlob);
       }
 
-      revokeBlobUrl(convertedImage);
-      const resultUrl = createSecureObjectURL(resultBlob);
-      saveOperation({
-        type: 'image_conversion',
-        metadata: { filename: image.file.name, fileSize: resultBlob.size, format: settings.format, settings },
-        preview: resultUrl
-      });
-      setConvertedImage(resultUrl);
-      setConvertedBlob(resultBlob);
+      setConvertedImages(newConvertedImages);
+      setConvertedBlobs(newConvertedBlobs);
     } catch {
       setError('Conversion failed');
     } finally {
       setLoading(false);
     }
-  }, [image, settings, convertedImage, saveOperation]);
+  }, [images, settings, saveOperation]);
 
   const createPDF = async (preview: string, settings: ConversionSettings, jsPDF: any): Promise<Blob> => {
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'px' });
@@ -322,26 +353,50 @@ export function ImageTools() {
       fileType: formatOptions.find(f => f.value === settings.format)?.mimeType || 'image/jpeg'
     });
 
-  const handleDownload = useCallback(() => {
-    if (!convertedBlob || !settings.format) return;
-    const link = createSecureDownloadLink(convertedBlob, `converted.${settings.format === 'jpeg' ? 'jpg' : settings.format}`);
+  const handleDownload = useCallback((index: number) => {
+    if (!convertedBlobs[index] || !settings.format) return;
+    const link = createSecureDownloadLink(convertedBlobs[index], `converted-${index}.${settings.format === 'jpeg' ? 'jpg' : settings.format}`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [convertedBlob, settings.format]);
+  }, [convertedBlobs, settings.format]);
 
-  const resetImage = useCallback(() => {
-    revokeBlobUrl(image?.preview ?? null);
-    revokeBlobUrl(convertedImage);
-    setImage(null);
-    setConvertedImage(null);
-    setConvertedBlob(null);
+  const resetImages = useCallback(() => {
+    images.forEach(img => revokeBlobUrl(img.preview));
+    convertedImages.forEach(url => revokeBlobUrl(url));
+    setImages([]);
+    setConvertedImages([]);
+    setConvertedBlobs([]);
     setError(null);
     setShowCropModal(false);
     setCropImageSrc(null);
+    setCropImageIndex(null);
     setPoints([]);
     setRotation(0);
-  }, [image, convertedImage]);
+    stopCamera();
+  }, [images, convertedImages, stopCamera]);
+
+  const removeImage = useCallback((index: number) => {
+    setImages(prev => {
+      const newImages = [...prev];
+      revokeBlobUrl(newImages[index].preview);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+    setConvertedImages(prev => {
+      const newConverted = [...prev];
+      if (newConverted[index]) {
+        revokeBlobUrl(newConverted[index]);
+        newConverted.splice(index, 1);
+      }
+      return newConverted;
+    });
+    setConvertedBlobs(prev => {
+      const newBlobs = [...prev];
+      newBlobs.splice(index, 1);
+      return newBlobs;
+    });
+  }, []);
 
   const formatFileSize = useCallback((bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -358,7 +413,30 @@ export function ImageTools() {
         <h1 className="text-2xl font-bold text-gray-900 mb-6 text-center">Image Tools</h1>
         <AdComponent slot="image-tools-top" className="mb-6" style={{ minHeight: '90px' }} />
         <div className="bg-white rounded-xl shadow-lg p-4">
-          {showCropModal && cropImageSrc ? (
+          {showCameraModal && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-800">Camera Capture</h3>
+              <div className="relative">
+                <video ref={videoRef} className="w-full max-h-[70vh]" autoPlay playsInline />
+                <canvas ref={canvasRef} className="hidden" />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button 
+                  onClick={stopCamera} 
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={captureImage} 
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center"
+                >
+                  <Camera className="w-5 h-5 mr-2" />Capture
+                </button>
+              </div>
+            </div>
+          )}
+          {showCropModal && cropImageSrc && cropImageIndex !== null ? (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-800">Crop Image</h3>
               <div
@@ -417,7 +495,13 @@ export function ImageTools() {
               </div>
               <div className="flex justify-end gap-2">
                 <button 
-                  onClick={resetImage} 
+                  onClick={() => {
+                    setShowCropModal(false);
+                    setCropImageSrc(null);
+                    setCropImageIndex(null);
+                    setPoints([]);
+                    setRotation(0);
+                  }} 
                   className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
                 >
                   Cancel
@@ -435,7 +519,7 @@ export function ImageTools() {
                 </button>
               </div>
             </div>
-          ) : !image ? (
+          ) : images.length === 0 ? (
             <div>
               <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer ${isDragActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-400'}`}>
                 <input {...getInputProps()} />
@@ -444,7 +528,10 @@ export function ImageTools() {
                 <p className="text-sm text-gray-500 mt-2">JPEG, PNG, WebP, GIF, SVG</p>
               </div>
               <button 
-                onClick={captureFromCamera} 
+                onClick={(e) => {
+                  e.preventDefault();
+                  startCamera();
+                }} 
                 className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center mx-auto"
               >
                 <Camera className="w-5 h-5 mr-2" />Capture Document
@@ -454,19 +541,51 @@ export function ImageTools() {
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-gray-800">Preview</h3>
-                <button onClick={resetImage} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
+                <button onClick={resetImages} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <img src={image.preview} alt="Preview" className="w-full aspect-square object-contain rounded-lg bg-gray-100" />
-                  <p className="mt-2 text-sm text-gray-500">Original: {formatFileSize(image.file.size)}</p>
-                </div>
-                {convertedImage && (
-                  <div>
-                    <img src={convertedImage} alt="Converted" className="w-full aspect-square object-contain rounded-lg bg-gray-100" />
-                    <p className="mt-2 text-sm text-gray-500">Converted: {convertedBlob ? formatFileSize(convertedBlob.size) : 'N/A'}</p>
+                {images.map((image, index) => (
+                  <div key={index} className="relative">
+                    <img 
+                      src={image.preview} 
+                      alt={`Preview ${index}`} 
+                      className="w-full aspect-square object-contain rounded-lg bg-gray-100" 
+                    />
+                    <button 
+                      onClick={() => removeImage(index)} 
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setCropImageSrc(image.preview);
+                        setCropImageIndex(index);
+                        setShowCropModal(true);
+                      }} 
+                      className="absolute bottom-2 right-2 bg-indigo-600 text-white rounded-lg px-2 py-1 flex items-center"
+                    >
+                      <Crop className="w-4 h-4 mr-1" />Crop
+                    </button>
+                    <p className="mt-2 text-sm text-gray-500">Original: {formatFileSize(image.file.size)}</p>
+                    {convertedImages[index] && (
+                      <div className="mt-2">
+                        <img 
+                          src={convertedImages[index]} 
+                          alt={`Converted ${index}`} 
+                          className="w-full aspect-square object-contain rounded-lg bg-gray-100" 
+                        />
+                        <p className="mt-2 text-sm text-gray-500">Converted: {convertedBlobs[index] ? formatFileSize(convertedBlobs[index].size) : 'N/A'}</p>
+                        <button 
+                          onClick={() => handleDownload(index)} 
+                          className="mt-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center"
+                        >
+                          <Download className="w-5 h-5 mr-2" />Download
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
               {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
               <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
@@ -550,11 +669,6 @@ export function ImageTools() {
                   >
                     {loading ? <><Loader2 className="w-5 h-5 animate-spin mr-2" />Converting...</> : <>{settings.format === 'pdf' ? <FileText className="w-5 h-5 mr-2" /> : <ImageIcon className="w-5 h-5 mr-2" />}Convert</>}
                   </button>
-                  {convertedImage && (
-                    <button onClick={handleDownload} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center">
-                      <Download className="w-5 h-5 mr-2" />Download
-                    </button>
-                  )}
                 </div>
               </div>
             </div>
