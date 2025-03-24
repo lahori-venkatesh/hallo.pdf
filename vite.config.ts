@@ -3,14 +3,14 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  root: '.', // Ensures index.html is in the correct root directory
+  root: '.',
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate', // Automatically registers the Service Worker
+      registerType: 'autoUpdate',
       devOptions: {
-        enabled: true, // Enable Service Worker in development mode
-        type: 'module', // Use ES modules for the Service Worker
+        enabled: true,
+        type: 'module',
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'splashscreens/*'],
       manifest: {
@@ -39,7 +39,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15MB caching limit
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/docs\.opencv\.org\/.*/i,
@@ -48,7 +48,7 @@ export default defineConfig({
               cacheName: 'opencv-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
               cacheableResponse: {
                 statuses: [0, 200],
@@ -62,19 +62,19 @@ export default defineConfig({
               cacheName: 'image-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
               cacheableResponse: {
                 statuses: [0, 200],
               },
               fetchOptions: {
-                mode: 'cors', // Ensure CORS mode
-                credentials: 'omit', // Avoid sending credentials
+                mode: 'cors',
+                credentials: 'omit',
               },
               backgroundSync: {
                 name: 'unsplash-sync',
                 options: {
-                  maxRetentionTime: 24 * 60, // Retry for 24 hours
+                  maxRetentionTime: 24 * 60,
                 },
               },
             },
@@ -86,7 +86,7 @@ export default defineConfig({
               cacheName: 'adsense-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24, // 24 hours
+                maxAgeSeconds: 60 * 60 * 24,
               },
             },
           },
@@ -97,12 +97,12 @@ export default defineConfig({
               cacheName: 'static-resources',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+                maxAgeSeconds: 60 * 60 * 24 * 7,
               },
             },
           },
           {
-            urlPattern: /opencv\.js$/, // Avoid caching opencv.js if not needed
+            urlPattern: /opencv\.js$/,
             handler: 'NetworkOnly',
           },
         ],
@@ -113,12 +113,12 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: {
-    exclude: [], // Removed lucide-react exclusion unless explicitly needed
+    exclude: [],
   },
   resolve: {
     alias: {
       path: 'path-browserify',
-      '@workers': '/src/workers', // Alias for worker directory
+      '@workers': '/src/workers',
     },
   },
   server: {
@@ -133,11 +133,10 @@ export default defineConfig({
       'Cross-Origin-Resource-Policy': 'same-origin',
       'Content-Security-Policy': "frame-ancestors 'self'",
     },
-    
   },
   build: {
     target: ['es2020'],
-    chunkSizeWarningLimit: 1500, // Increased limit to 1.5MB
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name].[hash].js',
@@ -146,12 +145,12 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('opencv')) {
-              return 'opencv'; // Separate chunk for OpenCV
+              return 'opencv';
             }
             if (id.includes('react')) {
-              return 'react'; // Separate chunk for React
+              return 'react';
             }
-            return 'vendor'; // Other dependencies
+            return 'vendor';
           }
         },
       },
@@ -160,8 +159,8 @@ export default defineConfig({
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true,
-        drop_debugger: true,
+        drop_console: false, // Enable console logs for debugging
+        drop_debugger: false,
       },
     },
   },
