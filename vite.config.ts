@@ -7,7 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'autoUpdate', // Automatically registers the Service Worker
+      devOptions: {
+        enabled: true, // Enable Service Worker in development mode
+        type: 'module', // Use ES modules for the Service Worker
+      },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'splashscreens/*'],
       manifest: {
         name: 'Hallopdf - Document & Image Tools',
@@ -35,7 +39,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // Increases caching limit to 15MB
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15MB caching limit
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/docs\.opencv\.org\/.*/i,
@@ -62,6 +66,16 @@ export default defineConfig({
               },
               cacheableResponse: {
                 statuses: [0, 200],
+              },
+              fetchOptions: {
+                mode: 'cors', // Ensure CORS mode
+                credentials: 'omit', // Avoid sending credentials
+              },
+              backgroundSync: {
+                name: 'unsplash-sync',
+                options: {
+                  maxRetentionTime: 24 * 60, // Retry for 24 hours
+                },
               },
             },
           },
@@ -117,7 +131,9 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Resource-Policy': 'same-origin',
+      'Content-Security-Policy': "frame-ancestors 'self'",
     },
+    
   },
   build: {
     target: ['es2020'],
@@ -129,7 +145,13 @@ export default defineConfig({
         assetFileNames: 'assets/[name].[hash].[ext]',
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            return 'vendor'; // Moves dependencies to a separate chunk
+            if (id.includes('opencv')) {
+              return 'opencv'; // Separate chunk for OpenCV
+            }
+            if (id.includes('react')) {
+              return 'react'; // Separate chunk for React
+            }
+            return 'vendor'; // Other dependencies
           }
         },
       },

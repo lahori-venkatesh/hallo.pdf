@@ -67,7 +67,7 @@ if (!self.define) {
     });
   };
 }
-define(['./workbox-7af39230'], (function (workbox) { 'use strict';
+define(['./workbox-4b45afec'], (function (workbox) { 'use strict';
 
   self.skipWaiting();
   workbox.clientsClaim();
@@ -82,7 +82,7 @@ define(['./workbox-7af39230'], (function (workbox) { 'use strict';
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "index.html",
-    "revision": "0.8drhi5tpmso"
+    "revision": "0.uf7jejcnv3"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
@@ -99,11 +99,17 @@ define(['./workbox-7af39230'], (function (workbox) { 'use strict';
   }), 'GET');
   workbox.registerRoute(/^https:\/\/.*\.unsplash\.com\/.*/i, new workbox.CacheFirst({
     "cacheName": "image-cache",
+    "fetchOptions": {
+      "mode": "cors",
+      "credentials": "omit"
+    },
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 50,
       maxAgeSeconds: 2592000
     }), new workbox.CacheableResponsePlugin({
       statuses: [0, 200]
+    }), new workbox.BackgroundSyncPlugin("unsplash-sync", {
+      maxRetentionTime: 1440
     })]
   }), 'GET');
   workbox.registerRoute(/^https:\/\/pagead2\.googlesyndication\.com\/.*/i, new workbox.NetworkFirst({

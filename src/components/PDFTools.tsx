@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { PDFDocument } from 'pdf-lib';
 import { pdfjsLib } from '../utils/pdfjs';
@@ -383,7 +383,7 @@ export function PDFTools() {
       const updatedImages = prev.filter(img => img.id !== id);
 
       // Update file sizes after removing an image
-      const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0, 0);
+      const totalOriginalSize = updatedImages.reduce((sum, img) => sum + img.file.size, 0);
       const estimatedSize = totalOriginalSize * (createQualityLevel / 100);
       setCreateFileSizes({
         original: totalOriginalSize,
