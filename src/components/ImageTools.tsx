@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, Download, Image as ImageIcon, Loader2, X, Camera, FileText, Settings2, Crop, RotateCw } from 'lucide-react';
-import Webcam from 'react-webcam';
 import { useOperationsCache } from '../utils/operationsCache';
 import { SEOHeaders } from './SEOHeaders';
 import { AdComponent } from './AdComponent';
@@ -37,7 +36,6 @@ export function ImageTools() {
   const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCamera, setShowCamera] = useState(false); // New state for camera preview
   const [showCropModal, setShowCropModal] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [points, setPoints] = useState<Point[]>([]);
@@ -45,7 +43,6 @@ export function ImageTools() {
   const [dragState, setDragState] = useState<{ index: number | 'rotate' | null; type: 'move' | 'rotate' | null }>({ index: null, type: null });
   const imgRef = useRef<HTMLImageElement>(null);
   const cropContainerRef = useRef<HTMLDivElement>(null);
-  const webcamRef = useRef<Webcam>(null); // Ref for webcam
   const [settings, setSettings] = useState<ConversionSettings>({
     mode: 'quality', targetSize: null, quality: 80, format: 'jpeg', width: null, height: null, maintainAspectRatio: true
   });
@@ -88,31 +85,39 @@ export function ImageTools() {
     maxFiles: 1
   });
 
-  const handleCameraCapture = useCallback(() => {
-    if (webcamRef.current) {
-      const imageSrc = webcamRef.current.getScreenshot();
-      if (!imageSrc) {
-        setError('Failed to capture image. Please try again.');
-        return;
-      }
-      fetch(imageSrc)
-        .then(res => res.blob())
-        .then(blob => {
-          const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
-          const previewUrl = createSecureObjectURL(file);
-          setCropImageSrc(previewUrl);
-          setShowCropModal(true);
-          setImage({ file, preview: previewUrl });
-          setShowCamera(false);
-          setConvertedImage(null);
-          setConvertedBlob(null);
-          setError(null);
-        })
-        .catch(err => {
-          console.error('Error capturing image from camera:', err);
-          setError('Failed to capture image from camera.');
-        });
+  const captureFromCamera = useCallback(() => {
+    if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
+      alert("Camera capture is only available on mobile devices.");
+      return;
     }
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.capture = "environment"; // Forces mobile back camera
+    input.style.display = "none";
+
+    input.onchange = (event) => {
+      const target = event.target as HTMLInputElement;
+      const file = target.files ? target.files[0] : null;
+      if (file) {
+        if (!validateFile(file, ALLOWED_IMAGE_TYPES).isValid) {
+          setError('Invalid file type from camera');
+          return;
+        }
+        const previewUrl = createSecureObjectURL(file);
+        setCropImageSrc(previewUrl);
+        setShowCropModal(true);
+        setImage({ file, preview: previewUrl });
+        setConvertedImage(null);
+        setConvertedBlob(null);
+        setError(null);
+      }
+    };
+
+    document.body.appendChild(input);
+    input.click();
+    document.body.removeChild(input); // Clean up
   }, []);
 
   const handleImageLoad = useCallback(() => {
@@ -218,7 +223,7 @@ export function ImageTools() {
       const croppedSrc = await applyCrop(cropImageSrc, points);
       const croppedBlob = dataURLtoBlob(croppedSrc);
       const croppedFile = new File([croppedBlob], image?.file.name || 'cropped.jpg', { type: 'image/jpeg' });
-      revokeBlobUrl(image?.preview);
+      revokeBlobUrl(image?.preview ?? null);
       setImage({ file: croppedFile, preview: croppedSrc });
       setShowCropModal(false);
       setCropImageSrc(null);
@@ -303,13 +308,12 @@ export function ImageTools() {
   }, [convertedBlob, settings.format]);
 
   const resetImage = useCallback(() => {
-    revokeBlobUrl(image?.preview);
+    revokeBlobUrl(image?.preview ?? null);
     revokeBlobUrl(convertedImage);
     setImage(null);
     setConvertedImage(null);
     setConvertedBlob(null);
     setError(null);
-    setShowCamera(false);
     setShowCropModal(false);
     setCropImageSrc(null);
     setPoints([]);
@@ -324,10 +328,6 @@ export function ImageTools() {
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
   }, []);
 
-  const videoConstraints = {
-    facingMode: { ideal: 'environment' }, // Prefer back camera
-  };
-
   return (
     <>
       <SEOHeaders title="Image Tools" description="Convert and compress images" keywords={['image converter', 'compress images']} />
@@ -335,34 +335,7 @@ export function ImageTools() {
         <h1 className="text-2xl font-bold text-gray-900 mb-6 text-center">Image Tools</h1>
         <AdComponent slot="image-tools-top" className="mb-6" style={{ minHeight: '90px' }} />
         <div className="bg-white rounded-xl shadow-lg p-4">
-          {showCamera ? (
-            <div className="space-y-4">
-              <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                <Webcam
-                  ref={webcamRef}
-                  audio={false}
-                  screenshotFormat="image/jpeg"
-                  videoConstraints={videoConstraints}
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex justify-center gap-2">
-                <button
-                  onClick={handleCameraCapture}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
-                >
-                  <Camera className="w-5 h-5 mr-2" />
-                  Capture
-                </button>
-                <button
-                  onClick={() => setShowCamera(false)}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : showCropModal && cropImageSrc ? (
+          {showCropModal && cropImageSrc ? (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-800">Crop Image</h3>
               <div
@@ -448,7 +421,7 @@ export function ImageTools() {
                 <p className="text-sm text-gray-500 mt-2">JPEG, PNG, WebP, GIF, SVG</p>
               </div>
               <button 
-                onClick={() => setShowCamera(true)} 
+                onClick={captureFromCamera} 
                 className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center mx-auto"
               >
                 <Camera className="w-5 h-5 mr-2" />Capture Document
